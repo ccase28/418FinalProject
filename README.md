@@ -1,7 +1,7 @@
 # Parallel Malloc Implementation
 
 # URL
-https://github.com/ccase28/418FinalProject/edit/main/README.md
+https://ccase28.github.io/418FinalProject/
 
 # Summary
 
