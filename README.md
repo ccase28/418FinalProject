@@ -32,7 +32,11 @@ We will extend this implementation to work with multiple arenas, and experiment 
 All three implementations will be run tested by various multithreaded programs, each with different access patterns, to analyze speedup (or slowdown, as the case may be).
 
 ### Hope to achieve
-If we have time, our stretch goal is to implement a completely lock free version of Malloc. 
+If we have time, our stretch goal is to implement a completely lock free version of Malloc.
+
+Since our project aims to speed up allocation of memory for multithreaded application programs, we will measure the performance of our allocator by assembling a suite of programs with varying access patterns, access sizes, and durations, in hopes of finding a well-rounded understanding of how our general-purpose allocator performs in a variety of situations. We will test each program with different thread counts (up to 128) and measure how each iteration of our design affects speedup. We hypothesize that the naive single-lock solution will scale incredibly badly, a multi-arena lock-based implementation noticeably less so, with the lock-free version resulting in the greatest speedup.
+
+Amdahl's Law suggests that allocator-induced overhead, no matter how small, may be somewhat negligible in the overall runtime of the program. Ideally, we'll find some way of extracting a trace of calls to our allocator, so we can evaluate its true performance with less noise. 
 
 # Schedule
 We elected to go with the earlier project presentation slot. Because of this, our schedule must be expedited. 
