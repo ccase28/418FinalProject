@@ -9,13 +9,15 @@ We plan to create a highly scalable, thread-safe, and ideally lock-free allocato
 # Background
 glibc's "malloc" allocator relies on mutual exclusion locks around critical procedures in order to guarantee thread safety in concurrent shared-memory applications. This exposes the malloc suite to general availability concerns as thread counts increase, particularly deadlock (in the worst case). Can we do better than this?
 
-One often-discussed solution is to use separate mergeable arenas for each thread, which reduce contention. This still doesn't eliminate the need for locking, though. Our goal is to create a highly scalable, thread-safe, and ideally lock-free allocator that maximises availability to applications in addition to reducing data fragmentation. Constructing a lock-free allocator can be done using hardware-supported atomic instructions such as compare-and-swap, as well as thread-local caches (along the lines of Google's tcmalloc).
+One often-discussed solution is to use separate mergeable arenas for each thread, which reduce contention. This still doesn't eliminate the need for locking, though. Our goal is to create a highly scalable, thread-safe, and ideally lock-free allocator that maximises availability to applications in addition to reducing data fragmentation. Constructing a lock-free allocator can be done using hardware-supported atomic instructions such as compare-and-swap, as well as thread-local caches (along the lines of Google's tcmalloc). We would like to combine these concepts to create a transaction-based system that uses atomic pointer swaps to execute updates to the heap.
 
 # Challenges
 We believe that the greatest challenge in this project will be building a thread-safe allocator that does not use traditional synchronization primitives. The chunk of memory, or "heap", that we need to keep track of actually constitutes the underlying data structure, so keeping track of global state is extra tricky.
 
+Furthermore, since threads within a process share an address space, we cannot assume that a memory block or heap belongs to a single thread. In fact, it is quite common for ephemeral data to be passed around and modified by numerous threads, such as in producer-consumer or data-parallel computation models [_citation needed_].
+
 # Resources
- For this project, we primarily plan to use the PSC machines to test our implentation. We also plan to use the GHC machines for testing in order to conserve resources. As a starting point, we will be using Makoto's 213 implentation of Malloc Lab. We'll need to make further optimizations to this code, as well as entirely rewriting support routines that instantiate and manage different heaps. 
+ For this project, we primarily plan to use the PSC machines to test our implentation. We also plan to use the GHC machines for testing in order to conserve resources. Our language of choice is C, as it offers good performance and close integration with both threading infrastructure and assembly instructions, which we may make use of in order to execute CAS operations. As a starting point, we will be using Makoto's 213 implentation of Malloc Lab. We'll need to make further optimizations to this code, as well as entirely rewriting support routines that instantiate and manage different heaps. We'll also take cues from established allocator designes, such as Hoard and tcmalloc (listed below).
  
  [1] Google, _tcmalloc overview_. https://google.github.io/tcmalloc/overview.html.
  
@@ -33,9 +35,9 @@ All three implementations will be run tested by various multithreaded programs, 
 If we have time, our stretch goal is to implement a completely lock free version of Malloc. 
 
 # Schedule
-We elected to go with the earlier project presentation slot. Because of this, our schedule must be expedited. \
-Week 1 (11/13) - Start off with work on initial implementation - rewriting support routines that instantiate and manage different heaps. \
-Week 2 (11/20) - Begin work on arena based, single-heap implementation\
-Midpoint (11/30) - Complete single-heap implementation \
-Week 4 (12/4) - Work on stretch goals, finish any final work or optimizations \
-Final (12/7) - Complete report! \
+We elected to go with the earlier project presentation slot. Because of this, our schedule must be expedited. 
+* Week 0 (Nov. 9 - Nov. 12): Implement single-heap, single-lock allocator and begin multiple arenas
+* Week 1 (Nov. 13 - Nov. 19): Finish multiple arenas (both versions) and begin light benchmarking
+* Week 2 (Nov. 20 - Nov. 26): [Thanksgiving Break] Flesh out testing suite and replace locks with custom CAS-based primitives
+* Week 3 (Nov. 17 - Dec. 3): Integrate thread-local caches and transactional models
+* Week 4 (Dec. 4 - Dec. 9): Final benchmarks and presentation
