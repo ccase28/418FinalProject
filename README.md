@@ -16,6 +16,8 @@ We believe that the greatest challenge in this project will be building a thread
 
 Furthermore, since threads within a process share an address space, we cannot assume that a memory block or heap is owned exclusively by a single thread. In fact, it is quite common for ephemeral data to be passed around and modified by numerous threads, such as in producer-consumer or data-parallel computation models [_citation needed_]. Consecutive blocks whose addresses are aligned by less than the size of a cache line (typically 64 bytes) also run the risk of false sharing, though we suspect this is of limited impact.
 
+Ultimately, our foremost design consideration will be how contention between threads can be reduced, even under the most adversarial conditions. This may involve segregating application memory into classes of differing sizes and expected lifetimes.
+
 # Resources
  For this project, we primarily plan to use the PSC machines to test our implentation. We also plan to use the GHC machines for testing in order to conserve resources. Our language of choice is C, as it offers good performance and close integration with both threading infrastructure and assembly instructions, which we may make use of in order to execute CAS operations. As a starting point, we will be using Makoto's 213 implentation of Malloc Lab. We'll need to make further optimizations to this code, as well as entirely rewriting support routines that instantiate and manage different heaps. We'll also take cues from established allocator designes, such as Hoard and tcmalloc (listed below).
  
@@ -36,7 +38,7 @@ If we have time, our stretch goal is to implement a completely lock free version
 
 Since our project aims to speed up allocation of memory for multithreaded application programs, we will measure the performance of our allocator by assembling a suite of programs with varying access patterns, access sizes, and durations, in hopes of finding a well-rounded understanding of how our general-purpose allocator performs in a variety of situations. We will test each program with different thread counts (up to 128) and measure how each iteration of our design affects speedup. We hypothesize that the naive single-lock solution will scale incredibly badly, a multi-arena lock-based implementation noticeably less so, with the lock-free version resulting in the greatest speedup.
 
-Amdahl's Law suggests that allocator-induced overhead, no matter how small, may be somewhat negligible in the overall runtime of the program. Ideally, we'll find some way of extracting a trace of calls to our allocator, so we can evaluate its true performance with less noise. 
+Amdahl's Law suggests that allocator-induced overhead, no matter how small, may be somewhat negligible in the overall runtime of the program. Ideally, we'll find some way of extracting a history of calls to the allocator, so we can evaluate its true performance with less noise via a trace-driven testing suite. 
 
 # Schedule
 We elected to go with the earlier project presentation slot. Because of this, our schedule must be expedited. 
