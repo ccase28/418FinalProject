@@ -34,3 +34,8 @@ If we have time, our stretch goal is to implement a completely lock free version
 
 # Schedule
 We elected to go with the earlier project presentation slot. Because of this, our schedule must be expedited. 
+Week 1 (11/13) - Start off with work on initial implementation - rewriting support routines that instantiate and manage different heaps. 
+Week 2 (11/20) - Begin work on arena based, single-heap implementation
+Midpoint (11/30) - Complete single-heap implementation 
+Week 4 (12/4) - Work on stretch goals, finish any final work or optimizations 
+Final (12/7) - Complete report! 
