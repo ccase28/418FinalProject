@@ -27,7 +27,7 @@ Ultimately, our foremost design consideration will be how contention between thr
  
 # Goals / Deliverables
 ### Plan to Acheive
-An single-heap, thread-safe allocator with a single global lock. 
+A single-heap, thread-safe allocator with a single global lock. 
 
 We will extend this implementation to work with multiple arenas, and experiment with (1) multiple arenas that are each statically assigned to a single thread, still managed by mutexes, and (2) a shared pool of arenas that are dynamically claimed as needed by a thread using a bounded-buffer switch.
 
