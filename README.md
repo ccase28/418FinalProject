@@ -25,6 +25,8 @@ Ultimately, our foremost design consideration will be how contention between thr
  
  [2] Maged M. Michael. _Scalable Lock-Free Dynamic Memory Allocation_. 
  
+ [3] Richard L. Hudson, et al. _McRT-Malloc - A Scalable Transactional Memory Allocator_.
+ 
 # Goals / Deliverables
 ### Plan to Acheive
 A single-heap, thread-safe allocator with a single global lock. 
