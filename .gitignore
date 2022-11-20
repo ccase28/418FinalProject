@@ -1,0 +1,5 @@
+# object files and executables
+*.o *.ll *.so
+
+# malloc test
+malloc-test.c
