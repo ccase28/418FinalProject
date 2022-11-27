@@ -29,8 +29,10 @@ void *extend_bmp(intptr_t incr);
 void reset_bmp_ptr(void);
 
 /**
- * @brief
+ * @brief heap size
 */
 size_t current_arena_usage(void);
+
+void *mem_heap_hi(void);
 
 #endif /* mm-backend.h */

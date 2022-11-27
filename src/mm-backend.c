@@ -9,6 +9,7 @@ static unsigned char *mem_brk_chunk = NULL;  /* ditto, rounded up to a whole all
 static unsigned char *mem_max_addr = NULL;   /* Maximum allowable heap address */
 static size_t init_mmap_length = TOTAL_ALLOC_SPACE; /* Number of bytes allocated by mmap */
 static size_t pagesize;
+static bool init_done = false; // TODO: do for each thread
 
 /**
  * Round an address down to a multiple of a specified power of two.
@@ -80,6 +81,10 @@ void reset_bmp_ptr(void) {
 }
 
 void *extend_bmp(intptr_t incr) {
+    if (!init_done) {
+        heap_init();
+        init_done = true;
+    }
     unsigned char *old_brk = mem_brk;
 
     if (incr < 0) {
@@ -120,6 +125,12 @@ void *extend_bmp(intptr_t incr) {
     mem_brk = new_brk;
     return old_brk;
 }
+
+// TODO: change this function
+void *mem_heap_hi(void) {
+    return (void *)(mem_brk - 1);
+}
+
 
 size_t current_arena_usage(void) {
     return (size_t)(mem_brk - heap);

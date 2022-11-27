@@ -7,9 +7,9 @@
  * @brief Initialize the heap.
  * @return true if initialization was successful
  */
-bool init_heap(void) {
+static bool init_heap(void) {
     // Create the initial empty heap
-    word_t *start = (word_t *)(mem_sbrk(2 * wsize));
+    word_t *start = (word_t *)(extend_bmp(2 * wsize));
 
     if (start == (void *)-1) return false;
 
