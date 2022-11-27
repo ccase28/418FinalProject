@@ -19,11 +19,13 @@ Furthermore, since threads within a process share an address space, we cannot as
 Ultimately, our foremost design consideration will be how contention between threads can be reduced, even under the most adversarial conditions. This may involve segregating application memory into classes or contiguous regions of similar sizes and expected lifetimes.
 
 # Resources
- For this project, we primarily plan to use the PSC machines to test our implentation. We also plan to use the GHC machines for testing in order to conserve resources. Our language of choice is C, as it offers good performance and close integration with both threading infrastructure and assembly instructions, which we may make use of in order to execute CAS operations. As a starting point, we will be using Makoto's 213 implentation of Malloc Lab. We'll need to make further optimizations to this code, as well as entirely rewriting support routines that instantiate and manage different heaps. We'll also take cues from established allocator designes, such as Hoard and tcmalloc (listed below).
+ For this project, we primarily plan to use the PSC machines to test our implentation. We also plan to use the GHC machines for testing in order to conserve resources. Our language of choice is C, as it offers good performance and close integration with both threading infrastructure and assembly instructions, which we may make use of in order to execute CAS operations. As a starting point, we will be using Makoto's 213 implentation of Malloc Lab. We'll need to make further optimizations to this code, as well as entirely rewriting support routines that initialize and manage different heaps. We'll also take cues from established allocator designes, such as Hoard and tcmalloc (listed below).
  
  [1] Google, _tcmalloc overview_. https://google.github.io/tcmalloc/overview.html.
  
  [2] Maged M. Michael. _Scalable Lock-Free Dynamic Memory Allocation_. 
+ 
+ [3] Richard L. Hudson, et al. _McRT-Malloc - A Scalable Transactional Memory Allocator_.
  
 # Goals / Deliverables
 ### Plan to Acheive
