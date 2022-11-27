@@ -1,7 +1,7 @@
 #ifndef _MM_BACKEND_H
 #define _MM_BACKEND_H
 
-#include "common.h"
+#include "mm-comm.h"
 
 /**
  * @brief

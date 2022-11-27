@@ -3,10 +3,10 @@
 // modified from csapp memlib.c
 
 /* private global variables */
-static unsigned char *heap;           /* Starting address of heap */
-static unsigned char *mem_brk;        /* Current position of break */
-static unsigned char *mem_brk_chunk;  /* ditto, rounded up to a whole allocation chunk */
-static unsigned char *mem_max_addr;   /* Maximum allowable heap address */
+static unsigned char *heap = NULL;           /* Starting address of heap */
+static unsigned char *mem_brk = NULL;        /* Current position of break */
+static unsigned char *mem_brk_chunk = NULL;  /* ditto, rounded up to a whole allocation chunk */
+static unsigned char *mem_max_addr = NULL;   /* Maximum allowable heap address */
 static size_t init_mmap_length = TOTAL_ALLOC_SPACE; /* Number of bytes allocated by mmap */
 static size_t pagesize;
 
