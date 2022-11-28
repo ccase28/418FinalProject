@@ -10,9 +10,9 @@
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
-extern volatile block_t *heap_start;
-extern volatile miniblock_t *miniblock_pointer;
-extern volatile block_t *seglists[];
+extern block_t *heap_start;
+extern miniblock_t *miniblock_pointer;
+extern block_t *seglists[];
 extern size_t chunksize;
 
 pthread_mutex_t *global_lock_addr = NULL;
@@ -30,14 +30,30 @@ static void _mmf_cas_lock_finalize(void **__restrict__ addr, void *__restrict__ 
  * @return true if initialization was successful
  */
 static bool _mmf_init_heap(void) {
+    int trylock_return;
     uint64_t *start;
     // Only one thread can initialize at once
     pthread_mutex_init(&local_initializer, NULL);
     _mmf_cas_lock_finalize((void **)&global_lock_addr, (void *)&local_initializer);
 
+    trylock_return = pthread_mutex_trylock(global_lock_addr);
+    const char *einval_msg = "Fatal: Uninitialized mutex.\n";
+    switch (trylock_return) {
+        case 0:
+            break;
+        case EBUSY:
+            return false;
+        case EINVAL:
+            write(STDERR_FILENO, einval_msg, strlen(einval_msg));
+            exit(1);
+        default:
+            return false;
+    }
+    /* Lock acquired */
+
     // Create the initial empty heap
     if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
-        return false;
+        goto _mmf_init_heap_failure;
 
     start[0] = pack(0, true, true, false); // Heap prologue (block footer)
     start[1] = pack(0, true, true, false); // Heap epilogue (block header)
@@ -53,12 +69,19 @@ static bool _mmf_init_heap(void) {
 
     // Extend the empty heap with a free block of chunksize bytes
     if (extend_heap(chunksize) == NULL) {
-        return false;
+        goto _mmf_init_heap_failure;
     }
 
-    insert_free_block(heap_start);
+    // NOTE: 
+    insert_free_block((block_t *)heap_start);
 
+_mmf_init_heap_success:
+    pthread_mutex_unlock(global_lock_addr);
     return true;
+
+_mmf_init_heap_failure:
+    pthread_mutex_unlock(global_lock_addr);
+    return false;
 }
 
 /**
@@ -73,6 +96,7 @@ void *malloc(size_t size) {
     void *bp = NULL;
 
     // Initialize heap if it isn't initialized
+    // Mutex is acquired within this function
     if (heap_start == NULL) {
         _mmf_init_heap();
     }

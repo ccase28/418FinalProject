@@ -117,6 +117,13 @@ size_t extract_size(word_t word);
 size_t get_size(block_t *block);
 
 /**
+ * @brief Extracts the alloc of a block from its header.
+ * @param[in] block
+ * @return The alloc of the block
+ */
+bool get_alloc(block_t *block);
+
+/**
  * @brief Return whether the previous block is a miniblock.
  * @param[in] block A block in the heap.
  * @return whether the previous block is a miniblock.

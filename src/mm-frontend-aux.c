@@ -121,7 +121,7 @@ static bool extract_alloc(word_t word) {
     return (bool)(word & alloc_mask);
 }
 
-static bool get_alloc(block_t *block) {
+bool get_alloc(block_t *block) {
     return extract_alloc(block->header);
 }
 
