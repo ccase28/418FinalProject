@@ -93,7 +93,7 @@ void *extend_bmp(intptr_t incr) {
                 "value %ld\n",
                 (long)incr);
         errno = EINVAL;
-        return (void *)-1;
+        return _MM_EXTEND_BMP_FAIL;
     }
     if (mem_brk + incr > mem_max_addr) {
         ptrdiff_t alloc = mem_brk - heap + incr;
@@ -102,7 +102,7 @@ void *extend_bmp(intptr_t incr) {
                 "heap size of %td (0x%zx) bytes\n",
                 alloc, alloc);
         errno = ENOMEM;
-        return (void *)-1;
+        return _MM_EXTEND_BMP_FAIL;
     }
 
     unsigned char *new_brk = old_brk + incr;
@@ -118,7 +118,7 @@ void *extend_bmp(intptr_t incr) {
                 "ERROR: making %zd bytes at %p accessible failed (%s)\n",
                 new_brk_chunk - mem_brk_chunk, (void *)mem_brk_chunk,
                 strerror(errno));
-        return (void *)-1;
+        _MM_EXTEND_BMP_FAIL;
     }
 
     mem_brk_chunk = new_brk_chunk;

@@ -6,14 +6,13 @@
  *          from within any functions in this file. This will deadlock.
 */
 
+#include "mm-backend.h"
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
-#define _MMF_INIT_FAIL ((void *)-1L)
-
-extern block_t *heap_start;
-extern miniblock_t *miniblock_pointer;
-extern block_t *seglists[];
+extern volatile block_t *heap_start;
+extern volatile miniblock_t *miniblock_pointer;
+extern volatile block_t *seglists[];
 extern size_t chunksize;
 
 pthread_mutex_t *global_lock_addr = NULL;
@@ -37,7 +36,7 @@ static bool _mmf_init_heap(void) {
     _mmf_cas_lock_finalize((void **)&global_lock_addr, (void *)&local_initializer);
 
     // Create the initial empty heap
-    if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MMF_INIT_FAIL)
+    if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
         return false;
 
     start[0] = pack(0, true, true, false); // Heap prologue (block footer)
@@ -80,8 +79,10 @@ void *malloc(size_t size) {
 
     // Ignore spurious request
     if (size == 0) {
-        return bp;
+        return bp; // NULL
     }
+
+    pthread_mutex_lock(global_lock_addr);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -98,7 +99,7 @@ void *malloc(size_t size) {
         block = extend_heap(extendsize);
         // extend_heap returns an error
         if (block == NULL) {
-            return bp;
+            goto _malloc_finish;
         }
     }
 
@@ -117,6 +118,9 @@ void *malloc(size_t size) {
     split_block(block, asize);
 
     bp = header_to_payload(block);
+
+_malloc_finish:
+    pthread_mutex_unlock(global_lock_addr);
     return bp;
 }
 
@@ -129,8 +133,17 @@ void free(void *ptr) {
 
     if (ptr == NULL) return;
 
+    // cannot free if heap is uninit
+    if (!heap_start || !global_lock_addr) return;
+
+    pthread_mutex_lock(global_lock_addr);
+
+    // Should we make provisions for multiple threads freeing?
+    
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
+
+    if (get_alloc(block)) exit(1);
 
     // Mark the block as free
     bool prev_alloc = get_prev_alloc(block);
@@ -141,6 +154,8 @@ void free(void *ptr) {
 
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
+
+    pthread_mutex_unlock(global_lock_addr);
 }
 
 /**
