@@ -17,4 +17,8 @@ basic-test: malloc.so
 	export LD_PRELOAD=malloc.so
 	$(CC) $(CFLAGS) malloc-test.c malloc.so -o malloc-test
 
+driver: malloc.so driver.c
+	export LD_PRELOAD=malloc.so
+		$(CC) $(CFLAGS) driver.c malloc.so -o driver
+
 .PHONY: all clean

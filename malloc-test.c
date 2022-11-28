@@ -3,6 +3,16 @@
 
 int main (void) {
   void *p = malloc(5);
+  // size_t i = 5;
+  // size_t *ip = (void *)1;
+  // _mmf_cas_lock_finalize((void **)&ip, (void *)&i);
+  // if (ip == (void *)1) {
+  //   printf("cas failed.\n");
+  // } else {
+  //   printf("new value: %lu. i was %lu.\n", *ip, i);
+  // }
+
+
   if (p == NULL) {
     printf("malloc returned NULL.\n");
   } else {

@@ -8,6 +8,22 @@
 #include "mm-backend.h"
 
 /**
+ * Global variables 
+ */
+
+/** @brief Pointer to first block in the heap */
+block_t *heap_start = NULL;
+
+/** @brief Pointer to the start of the miniblock list */
+miniblock_t *miniblock_pointer = NULL;
+
+/** @brief Array of explicit lists segregated by size class */
+block_t *seglists[NUM_CLASSES];
+
+/** @brief Minimum extend size of heap */
+size_t chunksize = CHUNK_SIZE;
+
+/**
  * @brief Returns the maximum of two integers.
  * @param[in] x
  * @param[in] y

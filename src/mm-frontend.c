@@ -1,32 +1,56 @@
+/**
+ * @file mm-frontend.c
+ * @author Makoto Tomokiyo <mtomokiy@andrew.cmu.edu>
+ * @brief An interface to the custom malloc suite.
+ * WARNING: Do not call malloc-dependent library functions (such as printf)
+ *          from within any functions in this file. This will deadlock.
+*/
 
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
+#define _MMF_INIT_FAIL ((void *)-1L)
+
+extern block_t *heap_start;
+extern miniblock_t *miniblock_pointer;
+extern block_t *seglists[];
+extern size_t chunksize;
+
+pthread_mutex_t *global_lock_addr = NULL;
+__thread pthread_mutex_t local_initializer;
+
+
+static void _mmf_cas_lock_finalize(void **__restrict__ addr, void *__restrict__ const src) {
+    __asm__ (
+        "xorq %rax, %rax\n\t"
+        "lock cmpxchgq %rsi, (%rdi)\n\t");
+}
 
 /**
  * @brief Initialize the heap.
  * @return true if initialization was successful
  */
-static bool init_heap(void) {
-    // Create the initial empty heap
-    word_t *start = (word_t *)(extend_bmp(2 * wsize));
+static bool _mmf_init_heap(void) {
+    uint64_t *start;
+    // Only one thread can initialize at once
+    pthread_mutex_init(&local_initializer, NULL);
+    _mmf_cas_lock_finalize((void **)&global_lock_addr, (void *)&local_initializer);
 
-    if (start == (void *)-1) return false;
+    // Create the initial empty heap
+    if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MMF_INIT_FAIL)
+        return false;
 
     start[0] = pack(0, true, true, false); // Heap prologue (block footer)
     start[1] = pack(0, true, true, false); // Heap epilogue (block header)
 
     /* Reset global variables */
 
-    // Heap starts with first "block header", currently the epilogue
     heap_start = (block_t *)&(start[1]);
 
     chunksize = CHUNK_SIZE;
 
-    // Initialize all size class pointers
-    for (int i = 0; i < NUM_CLASSES; i++) {
-        seglists[i] = NULL;
-    }
+    // Reset all size class pointers
+    memset(seglists, 0, NUM_CLASSES * sizeof(void *));
 
     // Extend the empty heap with a free block of chunksize bytes
     if (extend_heap(chunksize) == NULL) {
@@ -40,12 +64,10 @@ static bool init_heap(void) {
 
 /**
  * @brief Extend the heap in response to allocation request.
- *
  * @param[in] size Amount of space requested by client
  * @return pointer to allocated payload, NULL if error occurred.
  */
 void *malloc(size_t size) {
-
     size_t asize;      // Adjusted block size
     size_t extendsize; // Amount to extend heap if no fit is found
     block_t *block;
@@ -53,7 +75,7 @@ void *malloc(size_t size) {
 
     // Initialize heap if it isn't initialized
     if (heap_start == NULL) {
-        init_heap();
+        _mmf_init_heap();
     }
 
     // Ignore spurious request

@@ -2,6 +2,7 @@
 #define _MM_FRONTEND_H
 
 #include "mm-backend.h"
+#include <pthread.h>
 
 extern void *malloc(size_t size);
 extern void free(void *ptr);

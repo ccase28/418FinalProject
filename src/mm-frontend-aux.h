@@ -65,24 +65,8 @@ static const word_t prev_mini_mask = 0x4;
 /** @brief How far to search seglists for desired block for best fit policy */
 static const size_t search_depth = 18;
 
-/**
- * Global variables 
- */
-
-/** @brief Pointer to first block in the heap */
-static block_t *heap_start = NULL;
-
-/** @brief Pointer to the start of the miniblock list */
-static miniblock_t *miniblock_pointer = NULL;
-
 /** @brief Set of size classes for segregated list */
-static size_t size_classes[] = {16, 48, 64, 80, 96, 128, 256, 1024, 4096, 8192};
-
-/** @brief Array of explicit lists segregated by size class */
-static block_t *seglists[NUM_CLASSES];
-
-/** @brief Minimum extend size of heap */
-static size_t chunksize = CHUNK_SIZE;
+static const size_t size_classes[] = {16, 48, 64, 80, 96, 128, 256, 1024, 4096, 8192};
 
 /**
  * @brief Returns the maximum of two integers.
