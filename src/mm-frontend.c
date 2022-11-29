@@ -15,6 +15,11 @@ extern miniblock_t *miniblock_pointer;
 extern block_t *seglists[];
 extern size_t chunksize;
 
+/**
+ * Single lock: global mutex has to be initialized by one thread.
+ * We use thread-local copies and compare-and-swap techniques
+ * to ensure atomicity when initializing global lock
+*/
 pthread_mutex_t *global_lock_addr = NULL;
 __thread pthread_mutex_t local_initializer;
 
