@@ -12,6 +12,7 @@ malloc.so: mm-frontend.o mm-backend.o mm-frontend-aux.o
 
 clean:
 	rm -f *.o *.so
+	rm -f malloc-test driver
 
 basic-test: malloc.so
 	export LD_PRELOAD=malloc.so
