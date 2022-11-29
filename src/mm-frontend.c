@@ -75,7 +75,6 @@ static bool _mmf_init_heap(void) {
     // NOTE: 
     insert_free_block((block_t *)heap_start);
 
-_mmf_init_heap_success:
     pthread_mutex_unlock(global_lock_addr);
     return true;
 
