@@ -47,5 +47,5 @@ We elected to go with the earlier project presentation slot. Because of this, ou
 * Week 0 (Nov. 9 - Nov. 12): Implement single-heap, single-lock allocator and begin multiple arenas
 * Week 1 (Nov. 13 - Nov. 19): Finish multiple arenas (both versions) and begin light benchmarking
 * Week 2 (Nov. 20 - Nov. 26): [Thanksgiving Break] Flesh out testing suite and replace locks with custom CAS-based primitives
-* Week 3 (Nov. 17 - Dec. 3): Integrate thread-local caches and transactional models
+* Week 3 (Nov. 27 - Dec. 3): Complete testing suite, integrate thread-local caches and transactional models
 * Week 4 (Dec. 4 - Dec. 9): Final benchmarks and presentation
