@@ -1,14 +1,14 @@
 ## Updated Schedule
 The remainder of our schedule is as follows:
-* Remainder of Week 3 (Nov. 30 - Dec. 3): Finish testing suite and work on thread local caches\
-* Start of Week 4 (Dec. 4 - Dec. 6): Complete thread local caches\
-* Remainder of Week 4 (Dec. 7 - Dec. 9): Final benchmarks and presentation preparations\
+* Remainder of Week 3 (Nov. 30 - Dec. 3): Finish testing suite and work on thread local caches
+* Start of Week 4 (Dec. 4 - Dec. 6): Complete thread local caches
+* Remainder of Week 4 (Dec. 7 - Dec. 9): Final benchmarks and presentation preparations
 
 
 ## Completed Work / Progress
-So far, we have completed the goals along the first two weeks of the schedule. We have completed different versions of allocators as described in our schdule - the initial, single-heap malloc implementation with one global lock and the multiple arena implementation of malloc. Finally, we have begun work on developing the testing suite with which we can use to benchmark and analyze these different allocators. 
+So far, we have completed the goals we designated for the first two weeks of the schedule. We have completed two different allocators - the initial, single-heap malloc implementation with one global lock and the multiple arena implementation of malloc. We have also begun work on developing the testing suite with which we can use to benchmark and analyze these different allocators. 
 
-We have completed the majority of tasks in our schedule, though we are slightly behind with the completion of the testing suite. We anticipate that we will be able to complete all of our initial goals for the project. Since we elected to present at the earlier poster slot, however, we will most likely not be able to compelte the "nice to have" stretch goals before the presentation slot. 
+We have completed the majority of tasks in our schedule, though we are slightly behind with the completion of the testing suite. We anticipate that we will be able to complete all of our initial goals for the project. Since we elected to present at the earlier poster slot, however, we will not be able to complete the "nice to have" stretch goals before the presentation slot. 
 
 
 ## Poster Session Plan
