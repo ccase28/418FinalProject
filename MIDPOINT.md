@@ -1,3 +1,8 @@
+title: "Midpoint"
+layout: page
+permalink: /midpoint
+
+
 ## Updated Schedule
 The remainder of our schedule is as follows:
 * Remainder of Week 3 (Nov. 30 - Dec. 3): Finish testing suite and work on thread local caches
