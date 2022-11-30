@@ -1,7 +1,3 @@
-title: "Midpoint"
-layout: page
-permalink: /midpoint
-
 
 ## Updated Schedule
 The remainder of our schedule is as follows:
