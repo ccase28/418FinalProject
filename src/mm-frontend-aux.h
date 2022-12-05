@@ -205,7 +205,7 @@ short find_size_class(size_t size);
  * @brief Find the epilogue of the current heap.
  * @return a pointer to the epilogue.
 */
-block_t *find_epilogue(void);
+block_t *find_epilogue();
 
 /**
  * @brief Insert a free block into the free list.

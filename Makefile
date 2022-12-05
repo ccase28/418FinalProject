@@ -1,5 +1,5 @@
 CC=clang
-CFLAGS=-Wall -Werror -std=c99 -fPIC -DPIC -g -Og
+CFLAGS=-Wall -Werror -std=c99 -fPIC -DPIC -Og -g
 SRC=src
 
 all: malloc.so

@@ -11,17 +11,17 @@
  * Global variables 
  */
 
-/** @brief Pointer to first block in the heap */
-block_t *heap_start = NULL;
-
 /** @brief Pointer to the start of the miniblock list */
-miniblock_t *miniblock_pointer = NULL;
+extern __thread miniblock_t *miniblock_pointer;
 
 /** @brief Array of explicit lists segregated by size class */
-block_t *seglists[NUM_CLASSES];
+extern __thread block_t *seglists[];
 
 /** @brief Minimum extend size of heap */
-size_t chunksize = CHUNK_SIZE;
+extern __thread size_t chunksize;
+
+/** @brief thread ID of the calling thread */
+extern __thread pid_t caller_tid;
 
 /**
  * @brief Returns the maximum of two integers.
@@ -208,7 +208,7 @@ short find_size_class(size_t size) {
 }
 
 block_t *find_epilogue() {
-    return (block_t *)((char *)mem_heap_hi() - 7);
+    return (block_t *)((char *)thread_mem_heap_hi() - 7);
 }
 
 void insert_free_block(block_t *block) {
@@ -352,7 +352,7 @@ block_t *extend_heap(size_t size) {
 
     // Allocate an even number of words to maintain alignment
     size = round_up(size, dsize);
-    if ((bp = extend_bmp((intptr_t)size)) == (void *)-1) {
+    if ((bp = thread_extend_bmp((intptr_t)size)) == (void *)-1) {
         return NULL;
     }
 

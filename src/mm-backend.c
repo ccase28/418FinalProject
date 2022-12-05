@@ -3,13 +3,10 @@
 // modified from csapp memlib.c
 
 /* private global variables */
-static unsigned char *heap = NULL;           /* Starting address of heap */
-static unsigned char *mem_brk = NULL;        /* Current position of break */
-static unsigned char *mem_brk_chunk = NULL;  /* ditto, rounded up to a whole allocation chunk */
-static unsigned char *mem_max_addr = NULL;   /* Maximum allowable heap address */
+static struct thread_heap_info *mm_arenas;
 static size_t init_mmap_length = TOTAL_ALLOC_SPACE; /* Number of bytes allocated by mmap */
 static size_t pagesize;
-static bool init_done = false; // TODO: do for each thread
+static bool init_done = false;
 
 /**
  * Round an address down to a multiple of a specified power of two.
@@ -35,12 +32,39 @@ static inline void *round_address_up(void *addr, size_t align) {
     return (void *)(((uintptr_t)addr + align - 1) & ~(align - 1));
 }
 
+static void initialize_arena_metadata(pid_t tid) {
+    pagesize = getpagesize();
+    size_t metadata_size = _MM_MAX_METADATA_BLOCKSIZE;
+    assert(metadata_size < _MM_INITIAL_NUM_THREADS * sizeof(struct thread_heap_info));
+    mm_arenas = mmap(
+                TRY_ALLOC_START - metadata_size,
+                metadata_size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1, 
+                0);
+    if (mm_arenas == MAP_FAILED) {
+        fprintf(stderr,
+                "FAILURE.  mmap couldn't allocate space for heap (%s)\n",
+                strerror(errno));
+        exit(1);
+    }
+    init_done = true;
+}
+
 /*
  * heap_init - initialize the memory system model
  */
-void heap_init(void) {
+void heap_init(pid_t tid) {
+    if (tid >= _MM_INITIAL_NUM_THREADS) {
+        fprintf(stderr,
+        "FAILURE: thread ID out of bounds.\n");
+    }
+    if (!init_done) {
+        initialize_arena_metadata(tid);
+    }
 
-    void *start = TRY_ALLOC_START;
+    void *start = (void *)(tid * (size_t)TRY_ALLOC_START);
     int prot = PROT_READ | PROT_WRITE;
     void *addr = mmap(start,                       /* suggested start*/
                       init_mmap_length,            /* length */
@@ -55,37 +79,37 @@ void heap_init(void) {
         exit(1);
     }
     /* check system page alignment */
-    pagesize = getpagesize();
     if (round_address_down(addr, pagesize) != addr) {
         fprintf(stderr,
                 "FAILURE.  Initial heap address (%p) is not page aligned\n",
                 addr);
         exit(1);
     }
-    heap = addr;
-    mem_max_addr = heap + init_mmap_length;
-    mem_brk = heap;
-    mem_brk_chunk = heap;
+    mm_arenas[tid].heap_start = addr;
+    mm_arenas[tid].max_addr = addr + init_mmap_length;
+    mm_arenas[tid].brk = addr;
+    mm_arenas[tid].brk_chunk = addr;
+    mm_arenas[tid].thread_init_done = true;
 }
 
 /*
  * heap_deinit - free the storage used by the memory system model
  */
-void heap_deinit(void) {
-    munmap(heap, init_mmap_length);
+void heap_deinit(pid_t tid) {
+    munmap(mm_arenas[tid].heap_start, init_mmap_length);
 }
 
-void reset_bmp_ptr(void) {
-    mem_brk = heap;
-    mem_brk_chunk = heap;
+void reset_bmp_ptr(pid_t tid) {
+    mm_arenas[tid].brk = mm_arenas[tid].heap_start;
+    mm_arenas[tid].brk_chunk = mm_arenas[tid].heap_start;
 }
 
-void *extend_bmp(intptr_t incr) {
+void *extend_bmp(intptr_t incr, pid_t tid) {
     if (!init_done) {
-        heap_init();
-        init_done = true;
+        heap_init(tid);
     }
-    unsigned char *old_brk = mem_brk;
+    struct thread_heap_info local_heap = mm_arenas[tid];
+    unsigned char *old_brk = local_heap.brk;
 
     if (incr < 0) {
         fprintf(stderr,
@@ -95,8 +119,8 @@ void *extend_bmp(intptr_t incr) {
         errno = EINVAL;
         return _MM_EXTEND_BMP_FAIL;
     }
-    if (mem_brk + incr > mem_max_addr) {
-        ptrdiff_t alloc = mem_brk - heap + incr;
+    if (local_heap.brk + incr > local_heap.max_addr) {
+        ptrdiff_t alloc = local_heap.brk - local_heap.heap_start + incr;
         fprintf(stderr,
                 "ERROR: mem_sbrk failed. Ran out of memory.  Would require "
                 "heap size of %td (0x%zx) bytes\n",
@@ -111,27 +135,37 @@ void *extend_bmp(intptr_t incr) {
         * sbrk accepts any 'incr' value, but mprotect only works on
         * full pages.
         */
-    if (new_brk_chunk > mem_brk_chunk &&
-        mprotect(mem_brk_chunk, (size_t)(new_brk_chunk - mem_brk_chunk),
+    if (new_brk_chunk > local_heap.brk_chunk &&
+        mprotect(local_heap.brk_chunk, (size_t)(new_brk_chunk - local_heap.brk_chunk),
                     PROT_READ | PROT_WRITE) == -1) {
         fprintf(stderr,
                 "ERROR: making %zd bytes at %p accessible failed (%s)\n",
-                new_brk_chunk - mem_brk_chunk, (void *)mem_brk_chunk,
+                new_brk_chunk - local_heap.brk_chunk, (void *)local_heap.brk_chunk,
                 strerror(errno));
         _MM_EXTEND_BMP_FAIL;
     }
 
-    mem_brk_chunk = new_brk_chunk;
-    mem_brk = new_brk;
+    mm_arenas[tid].brk_chunk = new_brk_chunk;
+    mm_arenas[tid].brk = new_brk;
     return old_brk;
 }
 
 // TODO: change this function
-void *mem_heap_hi(void) {
-    return (void *)(mem_brk - 1);
+void *mem_heap_hi(pid_t tid) {
+    if (!mm_arenas[tid].thread_init_done) {
+        fprintf(stderr, 
+        "mem_heap_hi: heap not initialized for thread %d.\n",
+        tid);
+    }
+    return (void *)(mm_arenas[tid].brk - 1);
 }
 
 
-size_t current_arena_usage(void) {
-    return (size_t)(mem_brk - heap);
+size_t current_arena_usage(pid_t tid) {
+    if (!mm_arenas[tid].thread_init_done) {
+        fprintf(stderr, 
+        "current_arena_usage: heap not initialized for thread %d.\n",
+        tid);
+    }
+    return (size_t)(mm_arenas[tid].brk - mm_arenas[tid].heap_start);
 }
