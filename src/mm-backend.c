@@ -57,7 +57,7 @@ static void initialize_arena_metadata(pid_t tid) {
  */
 void heap_init(pid_t tid) {
     if (tid >= _MM_INITIAL_NUM_THREADS) {
-        fprintf(stderr,
+        fwrite(STDERR_FILENO,
         "FAILURE: thread ID out of bounds.\n");
     }
     if (!init_done) {
@@ -73,16 +73,24 @@ void heap_init(pid_t tid) {
                       -1,                          /* fd */
                       0);                          /* offset */
     if (addr == MAP_FAILED) {
-        fprintf(stderr,
-                "FAILURE.  mmap couldn't allocate space for heap (%s)\n",
-                strerror(errno));
+        write(
+            STDERR_FILENO,
+            "FAILURE.  mmap couldn't allocate space for heap \n",
+            _MM_MAX_STDERR_MSG);
         exit(1);
     }
     /* check system page alignment */
     if (round_address_down(addr, pagesize) != addr) {
-        fprintf(stderr,
-                "FAILURE.  Initial heap address (%p) is not page aligned\n",
-                addr);
+        char stderr_write_buf[_MM_MAX_STDERR_MSG];
+        snprintf(
+            stderr_write_buf, 
+            _MM_MAX_STDERR_MSG,
+            "FAILURE. Initial heap address (%p) is not page aligned\n",
+            addr);
+        write(
+            stderr,
+            stderr_write_buf,
+            addr);
         exit(1);
     }
     mm_arenas[tid].heap_start = addr;

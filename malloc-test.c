@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "src/mm-frontend.h"
+#include "src/msafe-eprintf.h"
 
 int main (void) {
   void *p = malloc(5);

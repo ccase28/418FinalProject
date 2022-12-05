@@ -29,7 +29,7 @@ __thread pid_t caller_tid = -1;
  * We use thread-local copies and compare-and-swap techniques
  * to ensure atomicity when initializing global lock
 */
-__thread pthread_mutex_t *thread_lock_addr = NULL;
+__thread pthread_mutex_t thread_lock_addr;
 
 /**
  * @brief Initialize the heap.
@@ -41,9 +41,9 @@ static bool _mmf_init_heap(void) {
     caller_tid = syscall(__NR_gettid);
     
     // Only one thread can initialize at once
-    pthread_mutex_init(thread_lock_addr, NULL);
+    pthread_mutex_init(&thread_lock_addr, NULL);
 
-    trylock_return = pthread_mutex_trylock(thread_lock_addr);
+    trylock_return = pthread_mutex_trylock(&thread_lock_addr);
     const char *einval_msg = "Fatal: Uninitialized mutex.\n";
     switch (trylock_return) {
         case 0:
@@ -82,11 +82,11 @@ static bool _mmf_init_heap(void) {
     // NOTE: 
     insert_free_block((block_t *)heap_start);
 
-    pthread_mutex_unlock(thread_lock_addr);
+    pthread_mutex_unlock(&thread_lock_addr);
     return true;
 
 _mmf_init_heap_failure:
-    pthread_mutex_unlock(thread_lock_addr);
+    pthread_mutex_unlock(&thread_lock_addr);
     return false;
 }
 
@@ -112,7 +112,7 @@ void *malloc(size_t size) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(thread_lock_addr);
+    pthread_mutex_lock(&thread_lock_addr);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -150,7 +150,7 @@ void *malloc(size_t size) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(thread_lock_addr);
+    pthread_mutex_unlock(&thread_lock_addr);
     return bp;
 }
 
@@ -164,9 +164,9 @@ void free(void *ptr) {
     if (ptr == NULL) return;
 
     // cannot free if heap is uninit
-    if (!heap_start || !thread_lock_addr) return;
+    if (!heap_start) return;
 
-    pthread_mutex_lock(thread_lock_addr);
+    pthread_mutex_lock(&thread_lock_addr);
 
     // Should we make provisions for multiple threads freeing?
     
@@ -185,7 +185,7 @@ void free(void *ptr) {
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
 
-    pthread_mutex_unlock(thread_lock_addr);
+    pthread_mutex_unlock(&thread_lock_addr);
 }
 
 /**
