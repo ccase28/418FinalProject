@@ -304,7 +304,9 @@ ssize_t io_msafe_vdprintf(int fileno, const char *fmt, va_list argp) {
     return num_written;
 }
 
-/* Async-signal-safe assertion support*/
+/** Malloc-safe assertion support. 
+ * The library "assert.h" package uses asprintf, which calls malloc.
+*/
 void __io_msafe_assert_fail(const char *assertion, const char *file,
                        unsigned int line, const char *function) {
     io_msafe_dprintf(STDERR_FILENO, "%s: %s:%u: %s: Assertion `%s' failed.\n",

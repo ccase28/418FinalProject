@@ -4,13 +4,13 @@
 #include "mm-comm.h"
 
 #define _MM_EXTEND_BMP_FAIL ((void *)-1L)
-#define _MM_INITIAL_NUM_THREADS 128
+#define _MM_INITIAL_NUM_THREADS 256
 #define _MM_MAX_METADATA_BLOCKSIZE (1 << 14) /* 4 pages */
 
-#define thread_extend_bmp(incr) (extend_bmp(incr, caller_tid))
-#define thread_reset_bmp_ptr() (reset_bmp_ptr(caller_tid))
-#define thread_current_arena_usage() (current_arena_usage(caller_tid))
-#define thread_mem_heap_hi() (mem_heap_hi(caller_tid))
+#define thread_extend_bmp(incr) (extend_bmp(incr, caller_tid_internal))
+#define thread_reset_bmp_ptr() (reset_bmp_ptr(caller_tid_internal))
+#define thread_current_arena_usage() (current_arena_usage(caller_tid_internal))
+#define thread_mem_heap_hi() (mem_heap_hi(caller_tid_internal))
 
 struct thread_heap_info {
   unsigned char *heap_start;  /* Starting address of heap */
@@ -33,13 +33,13 @@ void *extend_bmp(intptr_t incr, pid_t tid);
 /**
  * @brief Resets the heap's bump pointer
  */
-void reset_bmp_ptr(pid_t pid);
+void reset_bmp_ptr(pid_t tid);
 
 /**
  * @brief heap size
 */
-size_t current_arena_usage(pid_t pid);
+size_t current_arena_usage(pid_t tid);
 
-void *mem_heap_hi(pid_t pid);
+void *mem_heap_hi(pid_t tid);
 
 #endif /* mm-backend.h */

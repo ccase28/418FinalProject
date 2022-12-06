@@ -18,11 +18,19 @@
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
-__thread block_t *heap_start;
+// static struct {
+//     // pid_t tids[_MM_INITIAL_NUM_THREADS];
+//     size_t size;
+//     size_t capacity;
+// } _mmf_tid_hash_map = {0, _MM_INITIAL_NUM_THREADS};
+static size_t _mmf_tid_hash_counter = 0;
+
+static __thread pid_t caller_tid_internal = -1;
+__thread block_t *heap_start = NULL;
 __thread miniblock_t *miniblock_pointer = NULL;
-__thread block_t *seglists[NUM_CLASSES];
+__thread block_t *seglists[NUM_CLASSES] = {0};
 __thread size_t chunksize = CHUNK_SIZE;
-__thread pid_t caller_tid = -1;
+
 
 /**
  * Single lock: global mutex has to be initialized by one thread.
@@ -31,6 +39,14 @@ __thread pid_t caller_tid = -1;
 */
 __thread pthread_mutex_t thread_lock_addr;
 
+static pid_t _mmf_hash_tid(pid_t sys_tid) {
+    pid_t ret = _mmf_tid_hash_counter;
+    if (++_mmf_tid_hash_counter >= _MM_INITIAL_NUM_THREADS) {
+        io_msafe_eprintf("FAILURE: too many threads.\n");
+    }
+    return ret;
+}
+
 /**
  * @brief Initialize the heap.
  * @return true if initialization was successful
@@ -38,20 +54,20 @@ __thread pthread_mutex_t thread_lock_addr;
 static bool _mmf_init_heap(void) {
     int trylock_return;
     uint64_t *start;
-    caller_tid = syscall(__NR_gettid);
+    pid_t sys_tid = syscall(__NR_gettid);
+    caller_tid_internal = _mmf_hash_tid(sys_tid);
     
     // Only one thread can initialize at once
     pthread_mutex_init(&thread_lock_addr, NULL);
 
     trylock_return = pthread_mutex_trylock(&thread_lock_addr);
-    const char *einval_msg = "Fatal: Uninitialized mutex.\n";
     switch (trylock_return) {
         case 0:
             break;
         case EBUSY:
             return false;
         case EINVAL:
-            write(STDERR_FILENO, einval_msg, strlen(einval_msg));
+            io_msafe_eprintf("Fatal: Uninitialized mutex.\n");
             exit(1);
         default:
             return false;
