@@ -20,6 +20,6 @@
 #ifndef TOTAL_ALLOC_SPACE
 #define TOTAL_ALLOC_SPACE (1UL << 30) /* 1 GiB */
 #endif
-#define TRY_ALLOC_START (void *)0x8000000
+#define TRY_ALLOC_START (void *)0x800000000000
 
 #endif // _COMMON_H

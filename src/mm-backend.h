@@ -5,7 +5,7 @@
 
 #define _MM_EXTEND_BMP_FAIL ((void *)-1L)
 #define _MM_INITIAL_NUM_THREADS 256
-#define _MM_MAX_METADATA_BLOCKSIZE (1 << 14) /* 4 pages */
+#define _MM_MAX_METADATA_BLOCKSIZE (1 << 15) /* 8 pages */
 
 #define thread_extend_bmp(incr) (extend_bmp(incr, caller_tid_internal))
 #define thread_reset_bmp_ptr() (reset_bmp_ptr(caller_tid_internal))

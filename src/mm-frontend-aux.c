@@ -21,7 +21,7 @@ extern __thread block_t *seglists[];
 extern __thread size_t chunksize;
 
 /** @brief thread ID of the calling thread */
-extern __thread pid_t caller_tid;
+extern __thread pid_t caller_tid_internal;
 
 /**
  * @brief Returns the maximum of two integers.

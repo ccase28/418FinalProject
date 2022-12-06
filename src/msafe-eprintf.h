@@ -20,6 +20,16 @@ ssize_t io_msafe_vdprintf(int fileno, const char *fmt, va_list argp)
         __attribute__((format(printf, 2, 0)));
 ssize_t io_msafe_writen(int fd, const void *usrbuf, size_t n);
 
+/**
+ * @brief Debug variant of io_msafe_dprintf. Runs only when 
+ * DEBUG is defined.
+*/
+#ifdef DEBUG
+#define io_msafe_eprintf_dbg(...) ((void)io_msafe_eprintf(__VA_ARGS__))
+#else
+#define io_msafe_eprintf_dbg(...) ((void)sizeof(__VA_ARGS__))
+#endif
+
 #define io_msafe_assert(expr)                                                       \
     ((expr) ? (void)0 : __io_msafe_assert_fail(#expr, __FILE__, __LINE__, __func__))
 

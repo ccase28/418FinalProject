@@ -86,11 +86,13 @@ ssize_t io_msafe_dprintf(int fileno, const char *fmt, ...) {
  * @see      io_msafe_vdprintf
  */
 ssize_t io_msafe_eprintf(const char *fmt, ...) {
+    int err = errno;
     va_list argp;
     va_start(argp, fmt);
     ssize_t ret = io_msafe_vdprintf(STDERR_FILENO, fmt, argp);
     va_end(argp);
     return ret;
+    errno = err;
 }
 
 struct _format_data {
@@ -280,6 +282,7 @@ static size_t _handle_format(const char *fmt, va_list argp,
  *  -  Others: %c, %s, %%, %p
  */
 ssize_t io_msafe_vdprintf(int fileno, const char *fmt, va_list argp) {
+    int err = errno;
     size_t pos = 0;
     ssize_t num_written = 0;
 
@@ -295,12 +298,13 @@ ssize_t io_msafe_vdprintf(int fileno, const char *fmt, va_list argp) {
         if (data.len > 0) {
             ssize_t ret = io_msafe_writen(fileno, (const void *)data.str, data.len);
             if (ret < 0 || (size_t)ret != data.len) {
+                errno = err;
                 return -1;
             }
             num_written += data.len;
         }
     }
-
+    errno = err;
     return num_written;
 }
 
@@ -319,6 +323,7 @@ void __io_msafe_assert_fail(const char *assertion, const char *file,
  * io_msafe_writen - Robustly write n bytes (unbuffered)
  */
 ssize_t io_msafe_writen(int fd, const void *usrbuf, size_t n) {
+    int err = errno;
     size_t nleft = n;
     ssize_t nwritten;
     const char *bufp = usrbuf;
@@ -335,5 +340,6 @@ ssize_t io_msafe_writen(int fd, const void *usrbuf, size_t n) {
         nleft -= (size_t)nwritten;
         bufp += nwritten;
     }
+    errno = err;
     return (ssize_t)n;
 }

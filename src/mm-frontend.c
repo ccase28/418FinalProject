@@ -25,7 +25,7 @@
 // } _mmf_tid_hash_map = {0, _MM_INITIAL_NUM_THREADS};
 static size_t _mmf_tid_hash_counter = 0;
 
-static __thread pid_t caller_tid_internal = -1;
+__thread pid_t caller_tid_internal = -1;
 __thread block_t *heap_start = NULL;
 __thread miniblock_t *miniblock_pointer = NULL;
 __thread block_t *seglists[NUM_CLASSES] = {0};
@@ -34,15 +34,19 @@ __thread size_t chunksize = CHUNK_SIZE;
 
 /**
  * Single lock: global mutex has to be initialized by one thread.
- * We use thread-local copies and compare-and-swap techniques
+ * We use thread-local copies and compare-and-swap
  * to ensure atomicity when initializing global lock
 */
-__thread pthread_mutex_t thread_lock_addr;
+__thread pthread_mutex_t thread_arena_lock;
 
 static pid_t _mmf_hash_tid(pid_t sys_tid) {
     pid_t ret = _mmf_tid_hash_counter;
     if (++_mmf_tid_hash_counter >= _MM_INITIAL_NUM_THREADS) {
-        io_msafe_eprintf("FAILURE: too many threads.\n");
+        io_msafe_eprintf(
+            "FAILURE: concurrent thread count exceeds max of %d.\n",
+            _MM_INITIAL_NUM_THREADS);
+        errno = ENOMEM;
+        return -1;
     }
     return ret;
 }
@@ -56,19 +60,21 @@ static bool _mmf_init_heap(void) {
     uint64_t *start;
     pid_t sys_tid = syscall(__NR_gettid);
     caller_tid_internal = _mmf_hash_tid(sys_tid);
+    if (caller_tid_internal < 0) {
+        return false; // init failure
+    }
     
     // Only one thread can initialize at once
-    pthread_mutex_init(&thread_lock_addr, NULL);
+    pthread_mutex_init(&thread_arena_lock, NULL);
 
-    trylock_return = pthread_mutex_trylock(&thread_lock_addr);
+    trylock_return = pthread_mutex_trylock(&thread_arena_lock);
     switch (trylock_return) {
         case 0:
             break;
-        case EBUSY:
-            return false;
         case EINVAL:
             io_msafe_eprintf("Fatal: Uninitialized mutex.\n");
             exit(1);
+        case EBUSY:
         default:
             return false;
     }
@@ -98,11 +104,11 @@ static bool _mmf_init_heap(void) {
     // NOTE: 
     insert_free_block((block_t *)heap_start);
 
-    pthread_mutex_unlock(&thread_lock_addr);
+    pthread_mutex_unlock(&thread_arena_lock);
     return true;
 
 _mmf_init_heap_failure:
-    pthread_mutex_unlock(&thread_lock_addr);
+    pthread_mutex_unlock(&thread_arena_lock);
     return false;
 }
 
@@ -118,9 +124,9 @@ void *malloc(size_t size) {
     void *bp = NULL;
 
     // Initialize heap if it isn't initialized
-    // Mutex is acquired within this function
-    if (heap_start == NULL) {
-        _mmf_init_heap();
+    // Mutex is acquired and released within this function
+    if (heap_start == NULL && !_mmf_init_heap()) {
+        return NULL;
     }
 
     // Ignore spurious request
@@ -128,7 +134,7 @@ void *malloc(size_t size) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(&thread_lock_addr);
+    pthread_mutex_lock(&thread_arena_lock);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -166,7 +172,7 @@ void *malloc(size_t size) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(&thread_lock_addr);
+    pthread_mutex_unlock(&thread_arena_lock);
     return bp;
 }
 
@@ -182,7 +188,7 @@ void free(void *ptr) {
     // cannot free if heap is uninit
     if (!heap_start) return;
 
-    pthread_mutex_lock(&thread_lock_addr);
+    pthread_mutex_lock(&thread_arena_lock);
 
     // Should we make provisions for multiple threads freeing?
     
@@ -201,7 +207,7 @@ void free(void *ptr) {
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
 
-    pthread_mutex_unlock(&thread_lock_addr);
+    pthread_mutex_unlock(&thread_arena_lock);
 }
 
 /**

@@ -32,13 +32,14 @@ static inline void *round_address_up(void *addr, size_t align) {
     return (void *)(((uintptr_t)addr + align - 1) & ~(align - 1));
 }
 
-static void initialize_arena_metadata(pid_t tid) {
+static void initialize_arena_metadata(void) {
     pagesize = getpagesize();
     size_t metadata_size = _MM_MAX_METADATA_BLOCKSIZE;
+    // make sure block can fit metadata
     io_msafe_assert(
-        metadata_size < _MM_INITIAL_NUM_THREADS * sizeof(struct thread_heap_info));
+        metadata_size >= _MM_INITIAL_NUM_THREADS * sizeof(struct thread_heap_info));
     mm_arenas = mmap(
-                TRY_ALLOC_START - metadata_size,
+                NULL,
                 metadata_size,
                 PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS,
@@ -46,10 +47,12 @@ static void initialize_arena_metadata(pid_t tid) {
                 0);
     if (mm_arenas == MAP_FAILED) {
         io_msafe_eprintf(
-                "FAILURE.  mmap couldn't allocate space for heap (%s)\n",
-                strerror(errno));
+            "FAILURE.  mmap couldn't allocate space for metadata (%s)\n",
+            strerror(errno));
         exit(1);
     }
+    io_msafe_eprintf_dbg(
+        "Metadata initialized at address %p.\n", mm_arenas);
     init_done = true;
 }
 
@@ -61,10 +64,10 @@ void heap_init(pid_t tid) {
         io_msafe_eprintf("FAILURE: thread ID %d out of bounds.\n", tid);
     }
     if (!init_done) {
-        initialize_arena_metadata(tid);
+        initialize_arena_metadata();
     }
 
-    void *start = (void *)(tid * (size_t)TRY_ALLOC_START);
+    void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
     int prot = PROT_READ | PROT_WRITE;
     void *addr = mmap(start,                       /* suggested start */
                       init_mmap_length,            /* length */
@@ -73,9 +76,13 @@ void heap_init(pid_t tid) {
                       -1,                          /* fd */
                       0);                          /* offset */
     if (addr == MAP_FAILED) {
-        io_msafe_eprintf("FAILURE.  mmap couldn't allocate space for heap \n");
+        io_msafe_eprintf("FAILURE.  mmap couldn't allocate space for heap (%s)\n",
+        strerror(errno));
         exit(1);
     }
+    io_msafe_eprintf_dbg(
+        "Heap for thread %d initialized at address %p.\n",
+        tid, addr);
     /* check system page alignment */
     if (round_address_down(addr, pagesize) != addr) {
         io_msafe_eprintf(
