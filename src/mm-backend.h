@@ -2,6 +2,7 @@
 #define _MM_BACKEND_H
 
 #include "mm-comm.h"
+#include <dlfcn.h>
 
 #define _MM_EXTEND_BMP_FAIL ((void *)-1L)
 #define _MM_INITIAL_NUM_THREADS 256

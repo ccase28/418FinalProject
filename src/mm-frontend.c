@@ -195,7 +195,9 @@ void free(void *ptr) {
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
 
-    if (get_alloc(block)) exit(1);
+    if (!get_alloc(block)) {
+        io_msafe_eprintf("Fatal: free called on freed block.\n");
+    };
 
     // Mark the block as free
     bool prev_alloc = get_prev_alloc(block);

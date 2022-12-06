@@ -67,7 +67,7 @@ void heap_init(pid_t tid) {
         initialize_arena_metadata();
     }
 
-    void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
+    void *start = (void *)((tid + 1 * (size_t)TRY_ALLOC_START));
     int prot = PROT_READ | PROT_WRITE;
     void *addr = mmap(start,                       /* suggested start */
                       init_mmap_length,            /* length */
