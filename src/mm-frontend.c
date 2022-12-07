@@ -33,13 +33,10 @@ __thread size_t chunksize = CHUNK_SIZE;
 
 
 /**
- * Single lock: global mutex has to be initialized by one thread.
- * We use thread-local copies and compare-and-swap
- * to ensure atomicity when initializing global lock
+ * @brief Temporary function to has incoming TIDs.
 */
-__thread pthread_mutex_t thread_arena_lock;
-
 static pid_t _mmf_hash_tid(pid_t sys_tid) {
+    (void) sys_tid;
     pid_t ret = _mmf_tid_hash_counter;
     if (++_mmf_tid_hash_counter >= _MM_INITIAL_NUM_THREADS) {
         io_msafe_eprintf(
@@ -53,6 +50,8 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
 
 /**
  * @brief Initialize the heap.
+ * All heaps start out uninitialized. When a new thread calls malloc
+ * for the first time, its domain heap is initialized.
  * @return true if initialization was successful
  */
 static bool _mmf_init_heap(void) {

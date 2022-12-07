@@ -13,12 +13,17 @@
 #define thread_current_arena_usage() (current_arena_usage(caller_tid_internal))
 #define thread_mem_heap_hi() (mem_heap_hi(caller_tid_internal))
 
+// enum {
+
+// }
+
 struct thread_heap_info {
   unsigned char *heap_start;  /* Starting address of heap */
   unsigned char *brk;         /* Current position of break */
   unsigned char *brk_chunk;   /* ditto, rounded up to a whole allocation chunk */
   unsigned char *max_addr;    /* Maximum allowable heap address */
-  bool thread_init_done;          /* Thread */
+  pthread_mutex_t lock;
+  bool thread_init_done;      /* Whether heap is ready for use */
 };
 
 /**
