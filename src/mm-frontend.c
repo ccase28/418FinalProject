@@ -15,15 +15,7 @@ extern miniblock_t *miniblock_pointer;
 extern block_t *seglists[];
 extern size_t chunksize;
 
-pthread_mutex_t *global_lock_addr = NULL;
-__thread pthread_mutex_t local_initializer;
-
-
-static void _mmf_cas_lock_finalize(void **__restrict__ addr, void *__restrict__ const src) {
-    __asm__ (
-        "xorq %rax, %rax\n\t"
-        "lock cmpxchgq %rsi, (%rdi)\n\t");
-}
+pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * @brief Initialize the heap.
@@ -32,19 +24,14 @@ static void _mmf_cas_lock_finalize(void **__restrict__ addr, void *__restrict__ 
 static bool _mmf_init_heap(void) {
     int trylock_return;
     uint64_t *start;
-    // Only one thread can initialize at once
-    pthread_mutex_init(&local_initializer, NULL);
-    _mmf_cas_lock_finalize((void **)&global_lock_addr, (void *)&local_initializer);
 
-    trylock_return = pthread_mutex_trylock(global_lock_addr);
-    const char *einval_msg = "Fatal: Uninitialized mutex.\n";
+    trylock_return = pthread_mutex_trylock(&global_lock);
     switch (trylock_return) {
         case 0:
+        case EBUSY: // either thread gets it, or another is using
             break;
-        case EBUSY:
-            return false;
         case EINVAL:
-            write(STDERR_FILENO, einval_msg, strlen(einval_msg));
+            io_msafe_eprintf("Fatal: Uninitialized mutex.\n");
             exit(1);
         default:
             return false;
@@ -75,11 +62,11 @@ static bool _mmf_init_heap(void) {
     // NOTE: 
     insert_free_block((block_t *)heap_start);
 
-    pthread_mutex_unlock(global_lock_addr);
+    pthread_mutex_unlock(&global_lock);
     return true;
 
 _mmf_init_heap_failure:
-    pthread_mutex_unlock(global_lock_addr);
+    pthread_mutex_unlock(&global_lock);
     return false;
 }
 
@@ -105,7 +92,7 @@ void *malloc(size_t size) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(global_lock_addr);
+    pthread_mutex_lock(&global_lock);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -143,7 +130,7 @@ void *malloc(size_t size) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(global_lock_addr);
+    pthread_mutex_unlock(&global_lock);
     return bp;
 }
 
@@ -157,16 +144,21 @@ void free(void *ptr) {
     if (ptr == NULL) return;
 
     // cannot free if heap is uninit
-    if (!heap_start || !global_lock_addr) return;
+    if (!heap_start) {
+        io_msafe_eprintf("Fatal: cannot free on uninit heap.\n");
+    }
 
-    pthread_mutex_lock(global_lock_addr);
+    pthread_mutex_lock(&global_lock);
 
     // Should we make provisions for multiple threads freeing?
     
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
 
-    if (get_alloc(block)) exit(1);
+    if (!get_alloc(block))  {
+        io_msafe_eprintf("Fatal: cannot free freed block.\n");
+        exit(1);
+    }
 
     // Mark the block as free
     bool prev_alloc = get_prev_alloc(block);
@@ -178,7 +170,7 @@ void free(void *ptr) {
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
 
-    pthread_mutex_unlock(global_lock_addr);
+    pthread_mutex_unlock(&global_lock);
 }
 
 /**

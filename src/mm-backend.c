@@ -19,7 +19,7 @@ static bool init_done = false; // TODO: do for each thread
  * @return floor(addr / align) * align (where / is true mathematical division).
  */
 static inline void *round_address_down(void *addr, size_t align) {
-    assert((align & (align - 1)) == 0);  // true if align is a power of two
+    io_msafe_assert((align & (align - 1)) == 0);  // true if align is a power of two
     return (void *)((uintptr_t)addr & ~(align - 1));
 }
 
@@ -31,7 +31,7 @@ static inline void *round_address_down(void *addr, size_t align) {
  * @return ceil(addr / align) * align (where / is true mathematical division).
  */
 static inline void *round_address_up(void *addr, size_t align) {
-    assert((align & (align - 1)) == 0);  // true if align is a power of two
+    io_msafe_assert((align & (align - 1)) == 0);  // true if align is a power of two
     return (void *)(((uintptr_t)addr + align - 1) & ~(align - 1));
 }
 
@@ -49,7 +49,7 @@ void heap_init(void) {
                       -1,                          /* fd */
                       0);                          /* offset */
     if (addr == MAP_FAILED) {
-        fprintf(stderr,
+        io_msafe_eprintf(
                 "FAILURE.  mmap couldn't allocate space for heap (%s)\n",
                 strerror(errno));
         exit(1);
@@ -57,7 +57,7 @@ void heap_init(void) {
     /* check system page alignment */
     pagesize = getpagesize();
     if (round_address_down(addr, pagesize) != addr) {
-        fprintf(stderr,
+        io_msafe_eprintf(
                 "FAILURE.  Initial heap address (%p) is not page aligned\n",
                 addr);
         exit(1);
@@ -88,7 +88,7 @@ void *extend_bmp(intptr_t incr) {
     unsigned char *old_brk = mem_brk;
 
     if (incr < 0) {
-        fprintf(stderr,
+        io_msafe_eprintf(
                 "ERROR: mem_sbrk failed.  Attempt to expand heap by negative "
                 "value %ld\n",
                 (long)incr);
@@ -97,7 +97,7 @@ void *extend_bmp(intptr_t incr) {
     }
     if (mem_brk + incr > mem_max_addr) {
         ptrdiff_t alloc = mem_brk - heap + incr;
-        fprintf(stderr,
+        io_msafe_eprintf(
                 "ERROR: mem_sbrk failed. Ran out of memory.  Would require "
                 "heap size of %td (0x%zx) bytes\n",
                 alloc, alloc);
@@ -114,7 +114,7 @@ void *extend_bmp(intptr_t incr) {
     if (new_brk_chunk > mem_brk_chunk &&
         mprotect(mem_brk_chunk, (size_t)(new_brk_chunk - mem_brk_chunk),
                     PROT_READ | PROT_WRITE) == -1) {
-        fprintf(stderr,
+        io_msafe_eprintf(
                 "ERROR: making %zd bytes at %p accessible failed (%s)\n",
                 new_brk_chunk - mem_brk_chunk, (void *)mem_brk_chunk,
                 strerror(errno));

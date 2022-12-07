@@ -3,6 +3,8 @@
 
 #include "mm-backend.h"
 #include <pthread.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
 
 extern void *malloc(size_t size);
 extern void free(void *ptr);

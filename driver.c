@@ -25,61 +25,87 @@ typedef struct {
   uint16_t tid;
 } mm_driver_action;
 
-void parse_trace(FILE *trace, mm_driver_action *actions) {
+void parse_trace(char *buf, FILE *trace, mm_driver_action *actions) {
+  char c;
+  size_t id;
+  size_t size;
+  char rest[TRACE_READ_LINELEN];
+  size_t pos = 0;
+  while (fgets(buf, TRACE_READ_LINELEN + 1, trace) != NULL) {
+    if (strlen(buf) < 2) {
+      return;
+    }
+    sscanf(buf, "%c %s", &c, rest);
+    switch(c) {
+      case 'a':
+        sscanf(buf, "%c %lu %lu", &c, &id, &size);
+        actions[pos].alloc_type = MALLOC;
+        actions[pos].block_tag = id;
+        actions[pos++].alloc_size = size;
+        break;
+      case 'f':
+        sscanf(buf, "%c %lu", &c, &id);
+        actions[pos].alloc_type = FREE;
+        actions[pos++].block_tag = id;
+        break;
+      case 'r':
+      case 'c':
+      default:
+        continue;
+    }
+  }
   return;
 }
 
 int main (int argc, char **argv) {
-  extern char *optarg;
-  extern int optind, opterr, optopt;
-  char opt;
   mm_driver_action *actions;
   FILE *trace;
   char trace_read_buf[TRACE_READ_LINELEN];
   int num_allocs, num_actions;
   void **ptrs;
 
-  while ((opt = (char)getopt(argc, argv, "t:")) != -1) {
-    switch (opt) {
-      case 't':
-        assert(optarg != NULL);
-        trace = fopen(optarg, "r");
-        assert(trace != NULL);
-    }
+  if (argc < 2) {
+    io_msafe_eprintf("Usage: ./driver <trace>\n");
+    exit(0);
   }
+  trace = fopen(argv[1], "r");
+  io_msafe_assert(trace != NULL);
 
   fgets(trace_read_buf, TRACE_READ_LINELEN + 1, trace);
-  assert(sscanf(trace_read_buf, "%d", &num_allocs) == 1);
+  io_msafe_assert(sscanf(trace_read_buf, "%d", &num_allocs) == 1);
 
   fgets(trace_read_buf, TRACE_READ_LINELEN + 1, trace);
-  assert(sscanf(trace_read_buf, "%d", &num_actions) == 1);
+  io_msafe_assert(sscanf(trace_read_buf, "%d", &num_actions) == 1);
 
   actions = alloca(num_actions * sizeof(mm_driver_action));
-  assert(actions != NULL);
+  io_msafe_assert(actions != NULL);
 
   ptrs = alloca(num_allocs * sizeof(void *));
-  assert(ptrs != NULL);
+  io_msafe_assert(ptrs != NULL);
 
-  parse_trace(trace, actions);
+  parse_trace(trace_read_buf, trace, actions);
+  fclose(trace);
 
   for (int i = 0; i < num_actions; i++) {
     void *xalloc_return;
-    const char *op_error_msg;
     mm_driver_action op = actions[i];
     switch (op.alloc_type) {
       case MALLOC:
       case CALLOC:
       case REALLOC:
         xalloc_return = malloc(op.alloc_size);
-        if (xalloc_return == NULL & op.alloc_size != 0) {
-          op_error_msg = "malloc failed.\n";
-          write(STDERR_FILENO, op_error_msg, strlen(op_error_msg));
+        if (xalloc_return == NULL && op.alloc_size != 0) {
+          io_msafe_eprintf("driver: malloc failed.\n");
           exit(1);
         }
         ptrs[op.block_tag] = xalloc_return;
         break;
       case FREE:
+        free(ptrs[op.block_tag]);
         ptrs[op.block_tag] = NULL;
+        break;
+      default:
+      io_msafe_eprintf("Driver: Invalid operation.\n");
     }
   }
   return 0;
