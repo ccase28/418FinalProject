@@ -14,6 +14,7 @@
 #include <sys/mman.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <emmintrin.h>
 #include "msafe-eprintf.h"
 
 /* Option to expand heap size */

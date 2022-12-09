@@ -25,12 +25,14 @@
 // } _mmf_tid_hash_map = {0, _MM_INITIAL_NUM_THREADS};
 static size_t _mmf_tid_hash_counter = 0;
 
-__thread pid_t caller_tid_internal = -1;
-__thread block_t *heap_start = NULL;
-__thread miniblock_t *miniblock_pointer = NULL;
-__thread block_t *seglists[NUM_CLASSES] = {0};
+__thread pid_t _mm_caller_tid_internal = -1;
 __thread size_t chunksize = CHUNK_SIZE;
-
+__thread block_t *seglists[NUM_CLASSES] = {0};
+__thread miniblock_t *miniblock_pointer = NULL;
+__thread struct thread_heap_info *local_domain_arena = NULL;
+/**
+ * Each thread can see its own heap info, but not that of other threads.
+*/
 
 /**
  * @brief Temporary function to has incoming TIDs.
@@ -55,31 +57,19 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
  * @return true if initialization was successful
  */
 static bool _mmf_init_heap(void) {
-    int trylock_return;
     uint64_t *start;
     pid_t sys_tid = syscall(__NR_gettid);
-    caller_tid_internal = _mmf_hash_tid(sys_tid);
-    if (caller_tid_internal < 0) {
+    _mm_caller_tid_internal = _mmf_hash_tid(sys_tid);
+    if (_mm_caller_tid_internal < 0) {
         return false; // init failure
     }
-    
-    // Only one thread can initialize at once
-    pthread_mutex_init(&thread_arena_lock, NULL);
 
-    trylock_return = pthread_mutex_trylock(&thread_arena_lock);
-    switch (trylock_return) {
-        case 0:
-            break;
-        case EINVAL:
-            io_msafe_eprintf("Fatal: Uninitialized mutex.\n");
-            exit(1);
-        case EBUSY:
-        default:
-            return false;
-    }
-    /* Lock acquired */
+    // Initialize empty heap
+    local_domain_arena = thread_init_single_heap();
 
-    // Create the initial empty heap
+    pthread_mutex_lock(&local_domain_arena->lock);
+    local_domain_arena->thread_init_done = true;
+    // Add some space for dummy blocks
     if ((start = (uint64_t *)(thread_extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
         goto _mmf_init_heap_failure;
 
@@ -87,8 +77,6 @@ static bool _mmf_init_heap(void) {
     start[1] = pack(0, true, true, false); // Heap epilogue (block header)
 
     /* Reset global variables */
-
-    heap_start = (block_t *)&(start[1]);
 
     chunksize = CHUNK_SIZE;
 
@@ -100,14 +88,13 @@ static bool _mmf_init_heap(void) {
         goto _mmf_init_heap_failure;
     }
 
-    // NOTE: 
-    insert_free_block((block_t *)heap_start);
+    insert_free_block((block_t *)&(start[1]));
 
-    pthread_mutex_unlock(&thread_arena_lock);
+    pthread_mutex_unlock(&local_domain_arena->lock);
     return true;
 
 _mmf_init_heap_failure:
-    pthread_mutex_unlock(&thread_arena_lock);
+    pthread_mutex_unlock(&local_domain_arena->lock);
     return false;
 }
 
@@ -124,7 +111,7 @@ void *malloc(size_t size) {
 
     // Initialize heap if it isn't initialized
     // Mutex is acquired and released within this function
-    if (heap_start == NULL && !_mmf_init_heap()) {
+    if (local_domain_arena == NULL && !_mmf_init_heap()) {
         return NULL;
     }
 
@@ -133,7 +120,7 @@ void *malloc(size_t size) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(&thread_arena_lock);
+    pthread_mutex_lock(&local_domain_arena->lock);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -171,7 +158,7 @@ void *malloc(size_t size) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(&thread_arena_lock);
+    pthread_mutex_unlock(&local_domain_arena->lock);
     return bp;
 }
 
@@ -185,9 +172,11 @@ void free(void *ptr) {
     if (ptr == NULL) return;
 
     // cannot free if heap is uninit
-    if (!heap_start) return;
+    if (!local_domain_arena) return;
 
-    pthread_mutex_lock(&thread_arena_lock);
+    // borrow rights to arena to free resident pointer
+    pthread_mutex_t *remote_arena_lock = find_remote_lock(ptr);
+    pthread_mutex_lock(remote_arena_lock);
 
     // Should we make provisions for multiple threads freeing?
     
@@ -208,7 +197,7 @@ void free(void *ptr) {
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
 
-    pthread_mutex_unlock(&thread_arena_lock);
+    pthread_mutex_unlock(remote_arena_lock); // return heap to owner
 }
 
 /**

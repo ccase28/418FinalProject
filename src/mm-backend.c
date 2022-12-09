@@ -5,8 +5,9 @@
 /* private global variables */
 static struct thread_heap_info *mm_arenas;
 static size_t init_mmap_length = TOTAL_ALLOC_SPACE; /* Number of bytes allocated by mmap */
-static size_t pagesize;
-static bool init_done = false;
+static size_t _mm_sys_pagesize;
+static bool meta_init_done = false;
+static pthread_mutex_t meta_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Round an address down to a multiple of a specified power of two.
@@ -33,7 +34,13 @@ static inline void *round_address_up(void *addr, size_t align) {
 }
 
 static void initialize_arena_metadata(void) {
-    pagesize = getpagesize();
+    pthread_mutex_lock(&meta_init_lock);
+    _mm_mfence();
+    if (meta_init_done) {
+        pthread_mutex_unlock(&meta_init_lock);
+        return;
+    }
+    _mm_sys_pagesize = getpagesize();
     size_t metadata_size = _MM_MAX_METADATA_BLOCKSIZE;
     // make sure block can fit metadata
     io_msafe_assert(
@@ -53,21 +60,26 @@ static void initialize_arena_metadata(void) {
     }
     io_msafe_eprintf_dbg(
         "Metadata initialized at address %p.\n", mm_arenas);
-    init_done = true;
+    meta_init_done = true;
+    _mm_mfence(); // mfence the done flag
+    pthread_mutex_unlock(&meta_init_lock);
+    return;
 }
 
 /*
- * heap_init - initialize the memory system model
+ * init_single_heap - initialize the memory system model
  */
-void heap_init(pid_t tid) {
+struct thread_heap_info *init_single_heap(pid_t tid) {
+    struct thread_heap_info *domain_arena;
     if (tid >= _MM_INITIAL_NUM_THREADS) {
         io_msafe_eprintf("FAILURE: thread ID %d out of bounds.\n", tid);
+        exit(1);
     }
-    if (!init_done) {
+    if (!meta_init_done) {
         initialize_arena_metadata();
     }
 
-    void *start = (void *)((tid + 1 * (size_t)TRY_ALLOC_START));
+    void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
     int prot = PROT_READ | PROT_WRITE;
     void *addr = mmap(start,                       /* suggested start */
                       init_mmap_length,            /* length */
@@ -84,16 +96,18 @@ void heap_init(pid_t tid) {
         "Heap for thread %d initialized at address %p.\n",
         tid, addr);
     /* check system page alignment */
-    if (round_address_down(addr, pagesize) != addr) {
+    if (round_address_down(addr, _mm_sys_pagesize) != addr) {
         io_msafe_eprintf(
             "FAILURE. Initial heap address (%p) is not page aligned\n",
             addr);
     }
-    mm_arenas[tid].heap_start = addr;
-    mm_arenas[tid].max_addr = addr + init_mmap_length;
-    mm_arenas[tid].brk = addr;
-    mm_arenas[tid].brk_chunk = addr;
-    mm_arenas[tid].thread_init_done = true;
+    domain_arena = &mm_arenas[tid];
+    pthread_mutex_init(&domain_arena->lock, NULL);
+    domain_arena->heap_start = addr;
+    domain_arena->max_addr = addr + init_mmap_length;
+    domain_arena->bmp = addr;
+    domain_arena->bmp_chunk = addr; // do init_done in caller
+    return domain_arena;
 }
 
 /*
@@ -104,54 +118,51 @@ void heap_deinit(pid_t tid) {
 }
 
 void reset_bmp_ptr(pid_t tid) {
-    mm_arenas[tid].brk = mm_arenas[tid].heap_start;
-    mm_arenas[tid].brk_chunk = mm_arenas[tid].heap_start;
+    mm_arenas[tid].bmp = mm_arenas[tid].heap_start;
+    mm_arenas[tid].bmp_chunk = mm_arenas[tid].heap_start;
 }
 
 void *extend_bmp(intptr_t incr, pid_t tid) {
-    if (!init_done) {
-        heap_init(tid);
+    if (!meta_init_done || !mm_arenas[tid].thread_init_done) {
+        init_single_heap(tid);
     }
     struct thread_heap_info local_heap = mm_arenas[tid];
-    unsigned char *old_brk = local_heap.brk;
+    unsigned char *old_bmp = local_heap.bmp;
 
     if (incr < 0) {
         io_msafe_eprintf(
-            "ERROR: mem_sbrk failed.  Attempt to expand heap by negative "
+            "ERROR: extend_bmp failed.  Attempt to expand heap by negative "
             "value %ld\n",
                 (long)incr);
         errno = EINVAL;
         return _MM_EXTEND_BMP_FAIL;
     }
-    if (local_heap.brk + incr > local_heap.max_addr) {
-        ptrdiff_t alloc = local_heap.brk - local_heap.heap_start + incr;
+    if (local_heap.bmp + incr > local_heap.max_addr) {
+        ptrdiff_t alloc = local_heap.bmp - local_heap.heap_start + incr;
         io_msafe_eprintf(
-                "ERROR: mem_sbrk failed. Ran out of memory.  Would require "
+                "ERROR: extend_bmp failed. Ran out of memory.  Would require "
                 "heap size of %td (0x%zx) bytes\n",
                 alloc, alloc);
         errno = ENOMEM;
         return _MM_EXTEND_BMP_FAIL;
     }
 
-    unsigned char *new_brk = old_brk + incr;
-    unsigned char *new_brk_chunk = round_address_up(new_brk, pagesize);
-    /* Make the requested section of the heap be accessible.
-        * sbrk accepts any 'incr' value, but mprotect only works on
-        * full pages.
-        */
-    if (new_brk_chunk > local_heap.brk_chunk &&
-        mprotect(local_heap.brk_chunk, (size_t)(new_brk_chunk - local_heap.brk_chunk),
+    unsigned char *new_bmp = old_bmp + incr;
+    unsigned char *new_bmp_chunk = round_address_up(new_bmp, _mm_sys_pagesize);
+    /* Make the requested section of the heap be accessible. */
+    if (new_bmp_chunk > local_heap.bmp_chunk &&
+        mprotect(local_heap.bmp_chunk, (size_t)(new_bmp_chunk - local_heap.bmp_chunk),
                     PROT_READ | PROT_WRITE) == -1) {
         io_msafe_eprintf(
                 "ERROR: making %zd bytes at %p accessible failed (%s)\n",
-                new_brk_chunk - local_heap.brk_chunk, (void *)local_heap.brk_chunk,
+                new_bmp_chunk - local_heap.bmp_chunk, (void *)local_heap.bmp_chunk,
                 strerror(errno));
         _MM_EXTEND_BMP_FAIL;
     }
 
-    mm_arenas[tid].brk_chunk = new_brk_chunk;
-    mm_arenas[tid].brk = new_brk;
-    return old_brk;
+    mm_arenas[tid].bmp_chunk = new_bmp_chunk;
+    mm_arenas[tid].bmp = new_bmp;
+    return old_bmp;
 }
 
 // TODO: change this function
@@ -161,7 +172,18 @@ void *mem_heap_hi(pid_t tid) {
         "mem_heap_hi: heap not initialized for thread %d.\n",
         tid);
     }
-    return (void *)(mm_arenas[tid].brk - 1);
+    return (void *)(mm_arenas[tid].bmp - 1);
+}
+
+pthread_mutex_t *find_remote_lock(void *ptr) {
+    for (int i = 0; i < _MM_INITIAL_NUM_THREADS; i++) {
+        if (mm_arenas[i].thread_init_done
+        && (uintptr_t)mm_arenas[i].heap_start <= (uintptr_t)ptr
+        && (uintptr_t)mm_arenas[i].max_addr >= (uintptr_t)ptr) {
+            return &mm_arenas[i].lock;
+        }
+    }
+    return NULL;
 }
 
 
@@ -171,5 +193,5 @@ size_t current_arena_usage(pid_t tid) {
         "current_arena_usage: heap not initialized for thread %d.\n",
         tid);
     }
-    return (size_t)(mm_arenas[tid].brk - mm_arenas[tid].heap_start);
+    return (size_t)(mm_arenas[tid].bmp - mm_arenas[tid].heap_start);
 }

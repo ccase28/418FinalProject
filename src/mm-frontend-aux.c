@@ -17,11 +17,8 @@ extern __thread miniblock_t *miniblock_pointer;
 /** @brief Array of explicit lists segregated by size class */
 extern __thread block_t *seglists[];
 
-/** @brief Minimum extend size of heap */
-extern __thread size_t chunksize;
-
 /** @brief thread ID of the calling thread */
-extern __thread pid_t caller_tid_internal;
+extern __thread pid_t _mm_caller_tid_internal;
 
 /**
  * @brief Returns the maximum of two integers.
