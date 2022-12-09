@@ -101,6 +101,7 @@ int main (int argc, char **argv) {
         ptrs[op.block_tag] = xalloc_return;
         break;
       case FREE:
+        io_msafe_assert(ptrs[op.block_tag] != NULL);
         free(ptrs[op.block_tag]);
         ptrs[op.block_tag] = NULL;
         break;
