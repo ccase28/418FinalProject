@@ -42,17 +42,23 @@ static void initialize_arena_metadata(void) {
     }
     _mm_sys_pagesize = getpagesize();
     size_t metadata_size = _MM_MAX_METADATA_BLOCKSIZE;
+    int map_try_hugepage = MAP_HUGETLB;
     // make sure block can fit metadata
     io_msafe_assert(
         metadata_size >= _MM_INITIAL_NUM_THREADS * sizeof(struct thread_heap_info));
+init_metadata_try_mmap:
     mm_arenas = mmap(
                 NULL,
                 metadata_size,
                 PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS,
+                MAP_PRIVATE | MAP_ANONYMOUS | map_try_hugepage,
                 -1, 
                 0);
     if (mm_arenas == MAP_FAILED) {
+        if (map_try_hugepage) {
+            map_try_hugepage = 0;
+            goto init_metadata_try_mmap;
+        }
         io_msafe_eprintf(
             "FAILURE.  mmap couldn't allocate space for metadata (%s)\n",
             strerror(errno));

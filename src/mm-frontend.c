@@ -24,29 +24,38 @@
 //     size_t capacity;
 // } _mmf_tid_hash_map = {0, _MM_INITIAL_NUM_THREADS};
 static size_t _mmf_tid_hash_counter = 0;
+static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 
 __thread pid_t _mm_caller_tid_internal = -1;
-__thread size_t chunksize = CHUNK_SIZE;
 __thread block_t *seglists[NUM_CLASSES] = {0};
-__thread miniblock_t *miniblock_pointer = NULL;
-__thread struct thread_heap_info *local_domain_arena = NULL;
+static __thread struct thread_heap_info *local_domain_arena = NULL;
 /**
  * Each thread can see its own heap info, but not that of other threads.
 */
+
+// static void _mmf_CAS(uint64_t **dest, uint64_t *swap_val, uint64_t cmp_val) {
+//     __asm__(
+//         "movq %rdx,%rax\n\t"
+//         "lock cmpxchgq %rsi,(%rdi)\n\t"
+//     );
+// }
 
 /**
  * @brief Temporary function to has incoming TIDs.
 */
 static pid_t _mmf_hash_tid(pid_t sys_tid) {
     (void) sys_tid;
-    pid_t ret = _mmf_tid_hash_counter;
-    if (++_mmf_tid_hash_counter >= _MM_INITIAL_NUM_THREADS) {
+    pthread_mutex_lock(&_mmf_tid_lock);
+    pid_t ret = _mmf_tid_hash_counter++;
+    if (_mmf_tid_hash_counter >= _MM_INITIAL_NUM_THREADS) {
         io_msafe_eprintf(
             "FAILURE: concurrent thread count exceeds max of %d.\n",
             _MM_INITIAL_NUM_THREADS);
         errno = ENOMEM;
         return -1;
     }
+    _mm_mfence();
+    pthread_mutex_unlock(&_mmf_tid_lock);
     return ret;
 }
 
@@ -78,13 +87,11 @@ static bool _mmf_init_heap(void) {
 
     /* Reset global variables */
 
-    chunksize = CHUNK_SIZE;
-
     // Reset all size class pointers
     memset(seglists, 0, NUM_CLASSES * sizeof(void *));
 
     // Extend the empty heap with a free block of chunksize bytes
-    if (extend_heap(chunksize) == NULL) {
+    if (extend_heap(CHUNK_SIZE) == NULL) {
         goto _mmf_init_heap_failure;
     }
 
@@ -133,7 +140,7 @@ void *malloc(size_t size) {
     // If no fit is found, request more memory, and then and place the block
     if (block == NULL) {
         // Always request at least chunksize
-        extendsize = max(asize, chunksize);
+        extendsize = max(asize, CHUNK_SIZE);
         block = extend_heap(extendsize);
         // extend_heap returns an error
         if (block == NULL) {

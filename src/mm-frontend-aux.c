@@ -12,7 +12,7 @@
  */
 
 /** @brief Pointer to the start of the miniblock list */
-extern __thread miniblock_t *miniblock_pointer;
+static __thread miniblock_t *miniblock_pointer = NULL;
 
 /** @brief Array of explicit lists segregated by size class */
 extern __thread block_t *seglists[];

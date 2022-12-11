@@ -25,27 +25,39 @@ typedef struct {
   uint16_t tid;
 } mm_driver_action;
 
-void parse_trace(char *buf, FILE *trace, mm_driver_action *actions) {
+typedef struct {
+  mm_driver_action **act;
+  int nops;
+} runtrace_arg;
+
+void **ptrs;
+
+size_t parse_trace(char *buf, FILE *trace, mm_driver_action *actions,
+                int *ops_per_thread) {
   char c;
-  size_t id;
-  size_t size;
+  int tid;
+  size_t id, size, nthreads = 0;
   char rest[TRACE_READ_LINELEN];
   size_t pos = 0;
   while (fgets(buf, TRACE_READ_LINELEN + 1, trace) != NULL) {
     if (strlen(buf) < 2) {
-      return;
+      exit(1);
     }
-    sscanf(buf, "%c %s", &c, rest);
+    sscanf(buf, "%d %c %s", &tid, &c, rest);
+    nthreads = nthreads > tid ? nthreads : tid;
+    ops_per_thread[tid]++;
     switch(c) {
       case 'a':
-        sscanf(buf, "%c %lu %lu", &c, &id, &size);
+        sscanf(buf, "%d %c %lu %lu", &tid, &c, &id, &size);
         actions[pos].alloc_type = MALLOC;
         actions[pos].block_tag = id;
+        actions[pos].tid = tid;
         actions[pos++].alloc_size = size;
         break;
       case 'f':
-        sscanf(buf, "%c %lu", &c, &id);
+        sscanf(buf, "%d %c %lu", &tid, &c, &id);
         actions[pos].alloc_type = FREE;
+        actions[pos].tid = tid;
         actions[pos++].block_tag = id;
         break;
       case 'r':
@@ -54,16 +66,53 @@ void parse_trace(char *buf, FILE *trace, mm_driver_action *actions) {
         continue;
     }
   }
-  return;
+  return nthreads;
+}
+
+void *runtrace(void *argvp) {
+  runtrace_arg *arg = (runtrace_arg *)argvp;
+  mm_driver_action **actions = arg->act;
+  int num_actions = arg->nops;
+
+  for (int i = 0; i < num_actions; i++) {
+    void *xalloc_return;
+    mm_driver_action *op = actions[i];
+    switch (op->alloc_type) {
+      case MALLOC:
+      case CALLOC:
+      case REALLOC:
+        xalloc_return = malloc(op->alloc_size);
+        if (xalloc_return == NULL && op->alloc_size != 0) {
+          io_msafe_eprintf("driver: malloc failed.\n");
+          exit(1);
+        }
+        ptrs[op->block_tag] = xalloc_return;
+        break;
+      case FREE:
+        free(ptrs[op->block_tag]);
+        ptrs[op->block_tag] = NULL;
+        break;
+      default:
+      io_msafe_eprintf("Driver: Invalid operation %d.\n", op->alloc_type);
+      exit(1);
+    }
+  }
+  return NULL;
+}
+
+void cleanup(void) {
+  io_msafe_eprintf("Total arena usage: %lu.\n", current_arena_usage(0));
 }
 
 int main (int argc, char **argv) {
   mm_driver_action *actions;
   FILE *trace;
   char trace_read_buf[TRACE_READ_LINELEN];
+  int ops_per_thread[_MM_INITIAL_NUM_THREADS] = {0};
   int num_allocs, num_actions;
-  void **ptrs;
 
+  atexit(cleanup);
+  
   if (argc < 2) {
     io_msafe_eprintf("Usage: ./driver <trace>\n");
     exit(0);
@@ -77,36 +126,36 @@ int main (int argc, char **argv) {
   fgets(trace_read_buf, TRACE_READ_LINELEN + 1, trace);
   io_msafe_assert(sscanf(trace_read_buf, "%d", &num_actions) == 1);
 
-  actions = alloca(num_actions * sizeof(mm_driver_action));
+  actions = malloc(num_actions * sizeof(mm_driver_action));
   io_msafe_assert(actions != NULL);
 
-  ptrs = alloca(num_allocs * sizeof(void *));
+  ptrs = malloc(num_allocs * sizeof(void *));
   io_msafe_assert(ptrs != NULL);
 
-  parse_trace(trace_read_buf, trace, actions);
+  size_t maxtid = parse_trace(trace_read_buf, trace, actions, ops_per_thread);
   fclose(trace);
-
-  for (int i = 0; i < num_actions; i++) {
-    void *xalloc_return;
-    mm_driver_action op = actions[i];
-    switch (op.alloc_type) {
-      case MALLOC:
-      case CALLOC:
-      case REALLOC:
-        xalloc_return = malloc(op.alloc_size);
-        if (xalloc_return == NULL && op.alloc_size != 0) {
-          io_msafe_eprintf("driver: malloc failed.\n");
-          exit(1);
-        }
-        ptrs[op.block_tag] = xalloc_return;
-        break;
-      case FREE:
-        free(ptrs[op.block_tag]);
-        ptrs[op.block_tag] = NULL;
-        break;
-      default:
-      io_msafe_eprintf("Driver: Invalid operation.\n");
-    }
+  mm_driver_action **thread_actions[maxtid + 1]; // list of each thread's actions
+  int count[maxtid + 1];
+  // pthread_t tids[maxtid + 1];
+  memset(count, 0, (maxtid + 1) * sizeof(int));
+  for (int i = 0; i <= maxtid; i++) {
+    thread_actions[i] = malloc(ops_per_thread[i] * sizeof(void *));
   }
+  for (int i = 0; i < num_actions; i++) {
+    int thread = actions[i].tid;
+    int index = count[thread]++;
+    thread_actions[thread][index] = actions + i;
+  }
+  for (int i = 0; i <= maxtid; i++) {
+    runtrace_arg *arg = malloc(sizeof(runtrace_arg));
+    arg->act = thread_actions[i];
+    arg->nops = ops_per_thread[i];
+    runtrace((void *)arg);
+    // pthread_create(&tids[i], NULL, runtrace, (void *)arg);
+  }
+  // for (int i = 0; i < maxtid; i++) {
+  //   pthread_join(tids[i], NULL);
+  // }
+
   return 0;
 }

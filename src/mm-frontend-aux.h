@@ -9,8 +9,8 @@
 /** @brief Number of samples in average block size estimation */
 #define NUM_ITERS 100
 
-/** @brief Minimum size by which the heap extends*/
-#define CHUNK_SIZE 1 << 12
+/** @brief Minimum size by which the heap extends (2 pages default) */
+#define CHUNK_SIZE (1 << 12)
 
 typedef uint64_t word_t;
 
