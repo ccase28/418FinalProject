@@ -19,7 +19,7 @@
 
 /* Option to expand heap size */
 #ifndef TOTAL_ALLOC_SPACE
-#define TOTAL_ALLOC_SPACE (1UL << 30) /* 1 GiB */
+#define TOTAL_ALLOC_SPACE (1UL << 24) /* (nomore) 1 GiB */
 #endif
 #define TRY_ALLOC_START (void *)0x800000000000
 

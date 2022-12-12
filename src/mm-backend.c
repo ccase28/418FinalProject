@@ -42,23 +42,17 @@ static void initialize_arena_metadata(void) {
     }
     _mm_sys_pagesize = getpagesize();
     size_t metadata_size = _MM_MAX_METADATA_BLOCKSIZE;
-    int map_try_hugepage = MAP_HUGETLB;
     // make sure block can fit metadata
     io_msafe_assert(
         metadata_size >= _MM_INITIAL_NUM_THREADS * sizeof(struct thread_heap_info));
-init_metadata_try_mmap:
     mm_arenas = mmap(
                 NULL,
                 metadata_size,
                 PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS | map_try_hugepage,
+                MAP_PRIVATE | MAP_ANONYMOUS,
                 -1, 
                 0);
     if (mm_arenas == MAP_FAILED) {
-        if (map_try_hugepage) {
-            map_try_hugepage = 0;
-            goto init_metadata_try_mmap;
-        }
         io_msafe_eprintf(
             "FAILURE.  mmap couldn't allocate space for metadata (%s)\n",
             strerror(errno));
@@ -99,14 +93,20 @@ struct thread_heap_info *init_single_heap(pid_t tid) {
     // pthread_cleanup_push(heap_deinit, cleanup_arg.argp);
 
     void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
+    int map_try_hugepage = 0; // MAP_HUGETLB;
     int prot = PROT_READ | PROT_WRITE;
+init_single_try_mmap:
     void *addr = mmap(start,                       /* suggested start */
                       init_mmap_length,            /* length */
                       prot,                        /* access control */
-                      MAP_PRIVATE | MAP_ANONYMOUS, /* private anonymous mem */
+                      MAP_PRIVATE | MAP_ANONYMOUS | map_try_hugepage,
                       -1,                          /* fd */
                       0);                          /* offset */
     if (addr == MAP_FAILED) {
+        if (map_try_hugepage) {
+            map_try_hugepage = 0;
+            goto init_single_try_mmap;
+        }
         io_msafe_eprintf("FAILURE.  mmap couldn't allocate space for heap (%s)\n",
         strerror(errno));
         exit(1);
