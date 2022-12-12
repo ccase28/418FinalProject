@@ -18,20 +18,17 @@
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
-// static struct {
-//     // pid_t tids[_MM_INITIAL_NUM_THREADS];
-//     size_t size;
-//     size_t capacity;
-// } _mmf_tid_hash_map = {0, _MM_INITIAL_NUM_THREADS};
+// TODO: get arena context as only TLS variable
+// DO this by saving and restoring context
+
+/* @brief Used for assigning internal thread descriptors */
 static size_t _mmf_tid_hash_counter = 0;
+
+/* @brief Used for serializing acquisition of internal TID tags. */
 static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 
-__thread pid_t _mm_caller_tid_internal = -1;
-__thread block_t *seglists[NUM_CLASSES] = {0};
-static __thread struct thread_heap_info *local_domain_arena = NULL;
-/**
- * Each thread can see its own heap info, but not that of other threads.
-*/
+// NOTE: making static vs. extern visibility could be an issue
+static __thread struct thread_heap_info * thread_arena_context = NULL;
 
 // static void _mmf_CAS(uint64_t **dest, uint64_t *swap_val, uint64_t cmp_val) {
 //     __asm__(
@@ -60,6 +57,16 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
 }
 
 /**
+ * @brief Set the arena context to newcontext and return the old context.
+*/
+static void _mmf_set_context(
+    struct thread_heap_info *newcontext, struct thread_heap_info **savep) {
+    if (savep)
+        *savep = thread_arena_context;
+    thread_arena_context = newcontext;
+}
+
+/**
  * @brief Initialize the heap.
  * All heaps start out uninitialized. When a new thread calls malloc
  * for the first time, its domain heap is initialized.
@@ -67,17 +74,17 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
  */
 static bool _mmf_init_heap(void) {
     uint64_t *start;
-    pid_t sys_tid = syscall(__NR_gettid);
-    _mm_caller_tid_internal = _mmf_hash_tid(sys_tid);
-    if (_mm_caller_tid_internal < 0) {
+    pid_t mm_tid, sys_tid = syscall(__NR_gettid);
+    mm_tid = _mmf_hash_tid(sys_tid);
+    if (mm_tid < 0) {
         return false; // init failure
     }
 
     // Initialize empty heap
-    local_domain_arena = thread_init_single_heap();
+    thread_arena_context = thread_init_single_heap();
 
-    pthread_mutex_lock(&local_domain_arena->lock);
-    local_domain_arena->thread_init_done = true;
+    pthread_mutex_lock(&thread_arena_context->lock);
+    thread_arena_context->thread_init_done = true;
     // Add some space for dummy blocks
     if ((start = (uint64_t *)(thread_extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
         goto _mmf_init_heap_failure;
@@ -88,7 +95,7 @@ static bool _mmf_init_heap(void) {
     /* Reset global variables */
 
     // Reset all size class pointers
-    memset(seglists, 0, NUM_CLASSES * sizeof(void *));
+    memset(thread_arena_context->seglists, 0, NUM_CLASSES * sizeof(void *));
 
     // Extend the empty heap with a free block of chunksize bytes
     if (extend_heap(CHUNK_SIZE) == NULL) {
@@ -97,11 +104,11 @@ static bool _mmf_init_heap(void) {
 
     insert_free_block((block_t *)&(start[1]));
 
-    pthread_mutex_unlock(&local_domain_arena->lock);
+    pthread_mutex_unlock(&thread_arena_context->lock);
     return true;
 
 _mmf_init_heap_failure:
-    pthread_mutex_unlock(&local_domain_arena->lock);
+    pthread_mutex_unlock(&thread_arena_context->lock);
     return false;
 }
 
@@ -118,7 +125,7 @@ void *malloc(size_t size) {
 
     // Initialize heap if it isn't initialized
     // Mutex is acquired and released within this function
-    if (local_domain_arena == NULL && !_mmf_init_heap()) {
+    if (thread_arena_context == NULL && !_mmf_init_heap()) {
         return NULL;
     }
 
@@ -127,7 +134,7 @@ void *malloc(size_t size) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(&local_domain_arena->lock);
+    pthread_mutex_lock(&thread_arena_context->lock);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -165,7 +172,7 @@ void *malloc(size_t size) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(&local_domain_arena->lock);
+    pthread_mutex_unlock(&thread_arena_context->lock);
     return bp;
 }
 
@@ -175,15 +182,25 @@ _malloc_finish:
  * @param[in] ptr Pointer to the start of the allocated block.
  */
 void free(void *ptr) {
+    struct thread_heap_info *remote_arena_context, *save_local_context;
 
     if (ptr == NULL) return;
 
     // cannot free if heap is uninit
-    if (!local_domain_arena) return;
+    if (!thread_arena_context) return;
 
-    // borrow rights to arena to free resident pointer
-    pthread_mutex_t *remote_arena_lock = find_remote_lock(ptr);
-    pthread_mutex_lock(remote_arena_lock);
+    // Common case: block belongs to thread
+    // Insert builtin expect? Maybe make available
+    if ((uintptr_t)thread_arena_context->heap_start <= (uintptr_t)ptr
+     && (uintptr_t)thread_arena_context->max_addr >= (uintptr_t)ptr) {
+        remote_arena_context = thread_arena_context;
+     } else {
+        // borrow rights to arena to free resident pointer
+        remote_arena_context = nonlocal_context_from_pointer(ptr);
+     }
+    
+    _mmf_set_context(remote_arena_context, &save_local_context);
+    pthread_mutex_lock(thread_arena_context);
 
     // Should we make provisions for multiple threads freeing?
     
@@ -203,8 +220,8 @@ void free(void *ptr) {
 
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
-
-    pthread_mutex_unlock(remote_arena_lock); // return heap to owner
+    pthread_mutex_unlock(thread_arena_context); // return heap to owner
+    _mmf_set_context(save_local_context, NULL);
 }
 
 /**

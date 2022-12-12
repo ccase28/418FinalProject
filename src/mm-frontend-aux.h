@@ -3,19 +3,16 @@
 
 #include "mm-comm.h"
 
-/** @brief Number of size classes in segregated list */
-#define NUM_CLASSES 9
-
 /** @brief Number of samples in average block size estimation */
 #define NUM_ITERS 100
 
-/** @brief Minimum size by which the heap extends (2 pages default) */
+/** @brief Minimum size by which the heap extends (1 page min.) */
 #define CHUNK_SIZE (1 << 12)
 
 typedef uint64_t word_t;
 
 /** @brief Represents the header and payload of one block in the heap */
-typedef struct block {
+struct block {
     /**
      * @brief Header contains size + allocation flag
      */
@@ -27,16 +24,16 @@ typedef struct block {
         } ptrs;
         char payload[0];
     };
-} block_t;
+};
 
 /** @brief Represents a fixed-size miniblock in the heap */
-typedef struct miniblock {
+struct miniblock {
     word_t header;
     union {
         struct miniblock *next;
         char payload[0];
     };
-} miniblock_t;
+};
 
 /* Basic constants */
 

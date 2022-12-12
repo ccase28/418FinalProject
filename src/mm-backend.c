@@ -189,6 +189,7 @@ pthread_mutex_t *find_remote_lock(void *ptr) {
             return &mm_arenas[i].lock;
         }
     }
+    io_msafe_eprintf("Unable to find address %p in heap.\n", ptr);
     return NULL;
 }
 

@@ -12,13 +12,14 @@
  */
 
 /** @brief Pointer to the start of the miniblock list */
-static __thread miniblock_t *miniblock_pointer = NULL;
+// static __thread miniblock_t *miniblock_pointer = NULL;
 
 /** @brief Array of explicit lists segregated by size class */
-extern __thread block_t *seglists[];
+// extern __thread block_t *seglists[];
 
 /** @brief thread ID of the calling thread */
-extern __thread pid_t _mm_caller_tid_internal;
+extern __thread struct thread_heap_info * thread_arena_context;
+// extern __thread pid_t _mm_caller_tid_internal;
 
 /**
  * @brief Returns the maximum of two integers.
