@@ -28,7 +28,7 @@ static size_t _mmf_tid_hash_counter = 0;
 static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // NOTE: making static vs. extern visibility could be an issue
-static __thread struct thread_heap_info * thread_arena_context = NULL;
+__thread struct thread_heap_info * thread_arena_context = NULL;
 
 // static void _mmf_CAS(uint64_t **dest, uint64_t *swap_val, uint64_t cmp_val) {
 //     __asm__(
@@ -74,9 +74,9 @@ static void _mmf_set_context(
  */
 static bool _mmf_init_heap(void) {
     uint64_t *start;
-    pid_t mm_tid, sys_tid = syscall(__NR_gettid);
-    mm_tid = _mmf_hash_tid(sys_tid);
-    if (mm_tid < 0) {
+    pid_t sys_tid = syscall(__NR_gettid);
+    pid_t _mm_caller_tid_internal = _mmf_hash_tid(sys_tid);
+    if (_mm_caller_tid_internal < 0) {
         return false; // init failure
     }
 
@@ -89,8 +89,8 @@ static bool _mmf_init_heap(void) {
     if ((start = (uint64_t *)(thread_extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
         goto _mmf_init_heap_failure;
 
-    start[0] = pack(0, true, true, false); // Heap prologue (block footer)
-    start[1] = pack(0, true, true, false); // Heap epilogue (block header)
+    start[0] = pack(0, PK_INUSE, PK_INUSE_P, !PK_ISSMALL_P);
+    start[1] = pack(0, PK_INUSE, PK_INUSE_P, !PK_ISSMALL_P);
 
     /* Reset global variables */
 
@@ -196,11 +196,11 @@ void free(void *ptr) {
         remote_arena_context = thread_arena_context;
      } else {
         // borrow rights to arena to free resident pointer
-        remote_arena_context = nonlocal_context_from_pointer(ptr);
+        remote_arena_context = nonlocal_context_from_ptr(ptr);
      }
     
     _mmf_set_context(remote_arena_context, &save_local_context);
-    pthread_mutex_lock(thread_arena_context);
+    pthread_mutex_lock(&thread_arena_context->lock);
 
     // Should we make provisions for multiple threads freeing?
     
@@ -220,7 +220,7 @@ void free(void *ptr) {
 
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
-    pthread_mutex_unlock(thread_arena_context); // return heap to owner
+    pthread_mutex_unlock(&thread_arena_context->lock); // return heap to owner
     _mmf_set_context(save_local_context, NULL);
 }
 

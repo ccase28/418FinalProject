@@ -4,6 +4,7 @@
     "mm-frontend.h": "c",
     "*.tcc": "c",
     "msafe-eprintf.h": "c",
-    "mm-backend.h": "c"
+    "mm-backend.h": "c",
+    "mm-comm.h": "c"
   }
 }

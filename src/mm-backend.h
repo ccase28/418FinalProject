@@ -6,12 +6,12 @@
 #include <pthread.h>
 
 #define _MM_EXTEND_BMP_FAIL ((void *)-1L)
-#define _MM_INITIAL_NUM_THREADS 256
+#define _MM_INITIAL_NUM_THREADS 150
 #define _MM_MAX_METADATA_BLOCKSIZE (1 << 15) /* 8 pages */
 #define NUM_CLASSES 9
 
 #define thread_init_single_heap() \
-        (init_single_heap(thread_arena_context->_mm_caller_tid_internal))
+        (init_single_heap(_mm_caller_tid_internal))
 #define thread_extend_bmp(incr) \
         (extend_bmp(incr, thread_arena_context->_mm_caller_tid_internal))
 #define thread_reset_bmp_ptr() \
@@ -60,6 +60,6 @@ size_t current_arena_usage(pid_t tid);
 
 void *mem_heap_hi(pid_t tid);
 
-pthread_mutex_t *find_remote_lock(void *ptr);
+struct thread_heap_info *nonlocal_context_from_ptr(void *ptr);
 
 #endif /* mm-backend.h */

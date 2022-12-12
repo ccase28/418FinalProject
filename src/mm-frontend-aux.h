@@ -2,12 +2,26 @@
 #define _MM_FRONTEND_AUX_H
 
 #include "mm-comm.h"
+#include "mm-backend.h"
+
+/**
+ * Context-sensitive functions:
+ * find_fit
+ * extend_heap
+ * remove_free_block
+ * insert_free_block
+ * anything that calls any of these
+*/
 
 /** @brief Number of samples in average block size estimation */
 #define NUM_ITERS 100
 
 /** @brief Minimum size by which the heap extends (1 page min.) */
 #define CHUNK_SIZE (1 << 12)
+
+#define PK_INUSE true
+#define PK_INUSE_P true
+#define PK_ISSMALL_P true
 
 typedef uint64_t word_t;
 

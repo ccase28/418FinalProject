@@ -181,12 +181,12 @@ void *mem_heap_hi(pid_t tid) {
     return (void *)(mm_arenas[tid].bmp - 1);
 }
 
-pthread_mutex_t *find_remote_lock(void *ptr) {
+struct thread_heap_info *nonlocal_context_from_ptr(void *ptr) {
     for (int i = 0; i < _MM_INITIAL_NUM_THREADS; i++) {
         if (mm_arenas[i].thread_init_done
         && (uintptr_t)mm_arenas[i].heap_start <= (uintptr_t)ptr
         && (uintptr_t)mm_arenas[i].max_addr >= (uintptr_t)ptr) {
-            return &mm_arenas[i].lock;
+            return &mm_arenas[i];
         }
     }
     io_msafe_eprintf("Unable to find address %p in heap.\n", ptr);
