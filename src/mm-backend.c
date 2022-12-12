@@ -72,6 +72,17 @@ init_metadata_try_mmap:
     return;
 }
 
+/**
+ * heap_deinit - free a thread's heap.
+ * TODO: register tid as done, to be munmapd when block count goes to 0
+ */
+void *heap_deinit(void *arg) {
+    // int tid = ((tid_as_ptr)arg).argid;
+    // munmap(mm_arenas[tid].heap_start, init_mmap_length);
+    (void)arg;
+    return NULL;
+}
+
 /*
  * init_single_heap - initialize the memory system model
  */
@@ -84,6 +95,8 @@ struct thread_heap_info *init_single_heap(pid_t tid) {
     if (!meta_init_done) {
         initialize_arena_metadata();
     }
+    // tid_as_ptr cleanup_arg = {.argid = tid};
+    // pthread_cleanup_push(heap_deinit, cleanup_arg.argp);
 
     void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
     int prot = PROT_READ | PROT_WRITE;
@@ -113,14 +126,8 @@ struct thread_heap_info *init_single_heap(pid_t tid) {
     domain_arena->max_addr = addr + init_mmap_length;
     domain_arena->bmp = addr;
     domain_arena->bmp_chunk = addr; // do init_done in caller
+    domain_arena->_mm_caller_tid_internal = tid;
     return domain_arena;
-}
-
-/*
- * heap_deinit - free the storage used by the memory system model
- */
-void heap_deinit(pid_t tid) {
-    munmap(mm_arenas[tid].heap_start, init_mmap_length);
 }
 
 void reset_bmp_ptr(pid_t tid) {

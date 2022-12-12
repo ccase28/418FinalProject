@@ -23,6 +23,10 @@
 
 typedef struct block block_t;
 typedef struct miniblock miniblock_t;
+typedef union {
+  void *argp;
+  int argid;
+} tid_as_ptr;
 
 struct thread_heap_info {
   pthread_mutex_t lock;          /* Lock on the arena */

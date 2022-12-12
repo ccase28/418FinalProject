@@ -27,6 +27,8 @@ static size_t _mmf_tid_hash_counter = 0;
 /* @brief Used for serializing acquisition of internal TID tags. */
 static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static __thread pthread_mutex_t _mmf_local_init_lock = PTHREAD_MUTEX_INITIALIZER;
+
 // NOTE: making static vs. extern visibility could be an issue
 __thread struct thread_heap_info * thread_arena_context = NULL;
 
@@ -60,7 +62,8 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
  * @brief Set the arena context to newcontext and return the old context.
 */
 static void _mmf_set_context(
-    struct thread_heap_info *newcontext, struct thread_heap_info **savep) {
+    struct thread_heap_info *restrict newcontext, 
+    struct thread_heap_info **restrict savep) {
     if (savep)
         *savep = thread_arena_context;
     thread_arena_context = newcontext;
@@ -125,8 +128,13 @@ void *malloc(size_t size) {
 
     // Initialize heap if it isn't initialized
     // Mutex is acquired and released within this function
-    if (thread_arena_context == NULL && !_mmf_init_heap()) {
-        return NULL;
+    if (thread_arena_context == NULL) {
+        pthread_mutex_lock(&_mmf_local_init_lock);
+        if (!thread_arena_context && !_mmf_init_heap()) {
+            io_msafe_eprintf("Failed to initialize arena.\n");
+            return NULL;
+        }
+        pthread_mutex_unlock(&_mmf_local_init_lock);
     }
 
     // Ignore spurious request
