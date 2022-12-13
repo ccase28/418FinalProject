@@ -5,9 +5,7 @@
  * WARNING: Do not call malloc-dependent library functions (such as printf)
  *          from within any functions in this file. This will deadlock.
  * 
- * Multiple heaps: even if we need to lock, we don't need to do so for the 
- * whole malloc/free process!
- * We can search for a suitable chunk of memory, and atomically "reserve"
+ * Search for a suitable chunk of memory, and atomically "reserve"
  * that chunk, leading to low sync times. As long as contention on that 
  * particular block is low, CAS will likely succeed.
  * We can minimize contention by having threads keep track of where they 
@@ -18,18 +16,15 @@
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
-// TODO: get arena context as only TLS variable
-// DO this by saving and restoring context
-
 /* @brief Used for assigning internal thread descriptors */
 static size_t _mmf_tid_hash_counter = 0;
 
 /* @brief Used for serializing acquisition of internal TID tags. */
 static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* We might not need this, since threads are atomic wrt themselves */
 static __thread pthread_mutex_t _mmf_local_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// NOTE: making static vs. extern visibility could be an issue
 __thread struct thread_heap_info * thread_arena_context = NULL;
 
 // static void _mmf_CAS(uint64_t **dest, uint64_t *swap_val, uint64_t cmp_val) {
@@ -40,7 +35,9 @@ __thread struct thread_heap_info * thread_arena_context = NULL;
 // }
 
 /**
- * @brief Temporary function to has incoming TIDs.
+ * @brief Temporary function to assign incoming TIDs.
+ * TODO: we could also make this CAS-based but it's a once-per-thread operation
+ * so probably not a priority
 */
 static pid_t _mmf_hash_tid(pid_t sys_tid) {
     (void) sys_tid;
@@ -59,7 +56,9 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
 }
 
 /**
- * @brief Set the arena context to newcontext and return the old context.
+ * @brief Set the arena context to newcontext and save a pointer
+ * to the old context.
+ * If savep is null then discard current context pointer.
 */
 static void _mmf_set_context(
     struct thread_heap_info *restrict newcontext, 
@@ -70,39 +69,41 @@ static void _mmf_set_context(
 }
 
 /**
- * @brief Initialize the heap.
- * All heaps start out uninitialized. When a new thread calls malloc
+ * @brief Initialize the arena.
+ * All arenas start out uninitialized. When a new thread calls malloc
  * for the first time, its domain heap is initialized.
  * @return true if initialization was successful
  */
-static bool _mmf_init_heap(void) {
+static bool _mmf_init_arena(void) {
     uint64_t *start;
     pid_t sys_tid = syscall(__NR_gettid);
-    pid_t _mm_caller_tid_internal = _mmf_hash_tid(sys_tid);
-    if (_mm_caller_tid_internal < 0) {
-        return false; // init failure
+
+    /* scope of internal tid variable */ {
+        pid_t _mm_caller_tid_internal = _mmf_hash_tid(sys_tid);
+        if (_mm_caller_tid_internal < 0) {
+            return false; // init failure
+        }
+        // Initialize empty heap
+        thread_arena_context = thread_init_single_heap();
     }
 
-    // Initialize empty heap
-    thread_arena_context = thread_init_single_heap();
+    if (!thread_arena_context) return false;
 
     pthread_mutex_lock(&thread_arena_context->lock);
     thread_arena_context->thread_init_done = true;
     // Add some space for dummy blocks
     if ((start = (uint64_t *)(thread_extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
-        goto _mmf_init_heap_failure;
+        goto _mmf_init_arena_failure;
 
     start[0] = pack(0, PK_INUSE, PK_INUSE_P, !PK_ISSMALL_P);
     start[1] = pack(0, PK_INUSE, PK_INUSE_P, !PK_ISSMALL_P);
-
-    /* Reset global variables */
 
     // Reset all size class pointers
     memset(thread_arena_context->seglists, 0, NUM_CLASSES * sizeof(void *));
 
     // Extend the empty heap with a free block of chunksize bytes
     if (extend_heap(CHUNK_SIZE) == NULL) {
-        goto _mmf_init_heap_failure;
+        goto _mmf_init_arena_failure;
     }
 
     insert_free_block((block_t *)&(start[1]));
@@ -110,13 +111,13 @@ static bool _mmf_init_heap(void) {
     pthread_mutex_unlock(&thread_arena_context->lock);
     return true;
 
-_mmf_init_heap_failure:
+_mmf_init_arena_failure:
     pthread_mutex_unlock(&thread_arena_context->lock);
     return false;
 }
 
 /**
- * @brief Extend the heap in response to allocation request.
+ * @brief Return a block of memory of a requested size.
  * @param[in] size Amount of space requested by client
  * @return pointer to allocated payload, NULL if error occurred.
  */
@@ -130,7 +131,7 @@ void *malloc(size_t size) {
     // Mutex is acquired and released within this function
     if (thread_arena_context == NULL) {
         pthread_mutex_lock(&_mmf_local_init_lock);
-        if (!thread_arena_context && !_mmf_init_heap()) {
+        if (!thread_arena_context && !_mmf_init_arena()) {
             io_msafe_eprintf("Failed to initialize arena.\n");
             return NULL;
         }
@@ -205,6 +206,10 @@ void free(void *ptr) {
      } else {
         // borrow rights to arena to free resident pointer
         remote_arena_context = nonlocal_context_from_ptr(ptr);
+        if (remote_arena_context == NULL) {
+            errno = EINVAL;
+            return; // nothing we can do about this but report it
+        }
      }
     
     _mmf_set_context(remote_arena_context, &save_local_context);
