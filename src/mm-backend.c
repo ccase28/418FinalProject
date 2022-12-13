@@ -82,7 +82,7 @@ void *heap_deinit(void *arg) {
  */
 struct thread_heap_info *init_single_heap(pid_t tid) {
     struct thread_heap_info *domain_arena;
-    void *start, *addr;
+    // void *start, *addr;
     if (tid >= _MM_INITIAL_NUM_THREADS) {
         io_msafe_eprintf("FAILURE: thread ID %d out of bounds.\n", tid);
         exit(1);
@@ -93,21 +93,15 @@ struct thread_heap_info *init_single_heap(pid_t tid) {
     // tid_as_ptr cleanup_arg = {.argid = tid};
     // pthread_cleanup_push(heap_deinit, cleanup_arg.argp);
 
-    start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
-    int map_try_hugepage = 0; // MAP_HUGETLB;
+    void *start = (void *)((tid + 1) * (size_t)TRY_ALLOC_START);
     int prot = PROT_READ | PROT_WRITE;
-init_single_try_mmap:
-    addr = mmap(start,                       /* suggested start */
+    void *addr = mmap(start,                             /* suggested start */
                       init_mmap_length,            /* length */
                       prot,                        /* access control */
-                      MAP_PRIVATE | MAP_ANONYMOUS | map_try_hugepage,
+                      MAP_PRIVATE | MAP_ANONYMOUS,
                       -1,                          /* fd */
                       0);                          /* offset */
     if (addr == MAP_FAILED) {
-        if (map_try_hugepage) {
-            map_try_hugepage = 0;
-            goto init_single_try_mmap;
-        }
         io_msafe_eprintf("FAILURE.  mmap couldn't allocate space for heap (%s)\n",
         strerror(errno));
         exit(1);
