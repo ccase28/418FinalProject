@@ -4,6 +4,7 @@
 #include "mm-comm.h"
 
 #define _MM_EXTEND_BMP_FAIL ((void *)-1L)
+#define _MM_HARD_THREAD_LIMIT 150
 
 /**
  * @brief

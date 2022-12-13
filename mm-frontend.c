@@ -1,7 +1,6 @@
 
 #include "mm-frontend.h"
 
-static __thread struct thread_metadata_region * _thread_metadata = NULL;
 
 static const int _mmf_objects_per_sb = 128;
 static const int _mmf_max_sb_per_class = 32;
@@ -12,6 +11,10 @@ static const int _mmf_small_size_classes[] = {
 }; /* up to 2 pages is considered "small" */
 static const int _mmf_num_size_classes = 
   sizeof(_mmf_small_size_classes) / sizeof(int);
+
+static size_t _mmf_tid_hash_counter = 0;
+static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
+static __thread struct thread_metadata_region * _thread_metadata = NULL;
 
 /**
  * Node in a circular unrolled doubly-linked list.
@@ -42,6 +45,8 @@ typedef
  * 
  * sb_active: A pointer to the active superblock.
  * This may be null.
+ * TODO: we could make sb_active an index (char) but
+ * it gets padded anyway
 */
 typedef struct {
   struct superblock_descriptor *sb_start;
@@ -53,7 +58,20 @@ struct thread_metadata_region {
   sb_desc_region descriptors[_mmf_num_size_classes];
 }; // around 55kb, more if descriptor count = 64
 
-static size_t sc_index_from_size(size_t normsize) {
+static size_t round_request_size(size_t reqsize) {
+  // edge cases
+  if (reqsize > 32 && reqsize <= 48) return 48;
+  if (reqsize > 64 && reqsize <= 72) return 72;
+  reqsize--;
+  for (int i = 0; i < 5; i++)
+    reqsize |= (reqsize >> (1 << i));
+  return ++reqsize;
+}
+
+static short sc_index_from_size(size_t normsize) {
+  if (normsize > _mmf_small_threshold) {
+    return -1;
+  }
   switch (normsize) {
     case 16:
       return 0;
@@ -87,17 +105,104 @@ static size_t sc_index_from_size(size_t normsize) {
   }
 }
 
-static struct thread_metadata_region *
-_mmf_thread_init_metadata(pid_t tid) {
+/**
+ * @brief Temporary function to assign incoming TIDs.
+ * TODO: we could also make this CAS-based but it's a once-per-thread operation
+ * so probably not a priority
+*/
+static pid_t _mmf_hash_tid(pid_t sys_tid) {
+    (void) sys_tid;
+    pthread_mutex_lock(&_mmf_tid_lock);
+    pid_t ret = _mmf_tid_hash_counter++;
+    if (_mmf_tid_hash_counter >= _MM_HARD_THREAD_LIMIT) {
+        io_msafe_eprintf(
+            "FAILURE: concurrent thread count exceeds max of %d.\n",
+            _MM_HARD_THREAD_LIMIT);
+        errno = ENOMEM;
+        return -1;
+    }
+    _mm_mfence();
+    pthread_mutex_unlock(&_mmf_tid_lock);
+    return ret;
+}
+
+/**
+ * @brief Initialize a thread's metadata.
+ * @return true if metadata was successfully initialized, 
+ * false otherwise
+*/
+static pid_t _mmf_thread_init_metadata(void) {
+
+  pid_t sys_tid = syscall(__NR_gettid);
+  pid_t internal_tid = _mmf_hash_tid(sys_tid);
+  if (internal_tid < 0) {
+    return -1; // init failure
+  }
+
   size_t metadata_chunk_size = round_up(
     sizeof(struct thread_metadata_region), _MM_PAGESIZE);
 
-  // mmap this directly; we never return block to pageheap
-  void 
+  /* mmap this directly; we never return block to pageheap.
+     This also zeroes memory for us. */
+
+  struct thread_metadata_region *region_start = mmap
+    (NULL,
+    metadata_chunk_size,
+    PROT_READ | PROT_WRITE,
+    MAP_PRIVATE | MAP_ANONYMOUS,
+    -1,
+    0);
+  if (region_start == MAP_FAILED) {
+    io_msafe_eprintf(
+      "FAILURE. mmap couldn't allocate space for metadata "
+      "on thread %d (%s)\n",
+      internal_tid, strerror(errno));
+    exit(1);
+  }
+  /* Set pointers for all headers;
+     head of descriptor list should be null initially. */
+  for (int i = 0; i < _mmf_num_size_classes; i++) {
+    region_start->headers[i].sb_start = &region_start->descriptors[i];
+  }
+  _thread_metadata = region_start;
+  return internal_tid;
 }
 
 void *malloc(size_t size) {
-  return NULL;
+  size_t objsize;
+  short sc_index;
+  size_class_header *req_size_class;
+  struct superblock_descriptor *desc;
+  void *payload = NULL;
+  
+  if (size == 0) return NULL;
+
+  /* Initialize thread metadata */
+  if (_thread_metadata == NULL &&
+  _mmf_thread_init_metadata() < 0) {
+    perror("malloc");
+    exit(1);
+  }
+
+  // objsize is a power of 2, and thus a multiple of pagesize
+  // if greater than min threshold.
+  objsize = round_request_size(size);
+  sc_index = sc_index_from_size(objsize);
+  if (sc_index < 0) {
+    // malloc from page heap
+    return _mm_midend_request(objsize / _MM_PAGESIZE);
+  }
+  req_size_class = &_thread_metadata->headers[sc_index];
+  desc = &_thread_metadata->descriptors[sc_index];
+  
+  while (true) {
+    payload = malloc_active();
+    if (payload) return payload;
+    payload = malloc_new();
+    if (payload) return payload;
+  }
+
+  return payload;
 }
 
 void free(void *ptr) {

@@ -68,7 +68,7 @@ _mmf_init_heap_failure:
 }
 
 /**
- * @brief Extend the heap in response to allocation request.
+ * @brief Return a pointer to a contiguous block of num_pages pages.
  * @param[in] num_pages Number of pages requested by frontend
  * @return pointer to allocated payload, NULL if error occurred.
  */
