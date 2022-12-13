@@ -1,5 +1,5 @@
-#ifndef _MM_FRONTEND_H
-#define _MM_FRONTEND_H
+#ifndef _MM_MIDEND_H
+#define _MM_MIDEND_H
 
 #include "mm-backend.h"
 #include <pthread.h>

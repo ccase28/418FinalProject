@@ -1,5 +1,5 @@
-#ifndef _MM_FRONTEND_AUX_H
-#define _MM_FRONTEND_AUX_H
+#ifndef _MM_MIDEND_AUX_H
+#define _MM_MIDEND_AUX_H
 
 #include "mm-comm.h"
 
@@ -263,4 +263,4 @@ void split_block(block_t *block, size_t asize);
  */
 block_t *find_fit(size_t asize);
 
-#endif /* _MM_FRONTEND_H */
+#endif /* _MM_MIDEND_H */

@@ -7,8 +7,8 @@
 */
 
 #include "mm-backend.h"
-#include "mm-frontend.h"
-#include "mm-frontend-aux.h"
+#include "mm-midend.h"
+#include "mm-midend-aux.h"
 
 extern block_t *heap_start;
 extern miniblock_t *miniblock_pointer;

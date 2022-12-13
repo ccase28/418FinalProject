@@ -4,7 +4,7 @@
  * @brief Auxiliary functions for allocator frontend.
 */
 
-#include "mm-frontend-aux.h"
+#include "mm-midend-aux.h"
 #include "mm-backend.h"
 
 /**
