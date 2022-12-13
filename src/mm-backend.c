@@ -8,8 +8,8 @@ static unsigned char *mem_brk = NULL;        /* Current position of break */
 static unsigned char *mem_brk_chunk = NULL;  /* ditto, rounded up to a whole allocation chunk */
 static unsigned char *mem_max_addr = NULL;   /* Maximum allowable heap address */
 static size_t init_mmap_length = TOTAL_ALLOC_SPACE; /* Number of bytes allocated by mmap */
-static size_t pagesize;
 static bool init_done = false; // TODO: do for each thread
+size_t pagesize;
 
 /**
  * Round an address down to a multiple of a specified power of two.

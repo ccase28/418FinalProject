@@ -13,7 +13,7 @@
 extern block_t *heap_start;
 extern miniblock_t *miniblock_pointer;
 extern block_t *seglists[];
-extern size_t chunksize;
+extern size_t pagesize;
 
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -49,13 +49,10 @@ static bool _mmf_init_heap(void) {
 
     heap_start = (block_t *)&(start[1]);
 
-    chunksize = CHUNK_SIZE;
-
     // Reset all size class pointers
     memset(seglists, 0, NUM_CLASSES * sizeof(void *));
 
-    // Extend the empty heap with a free block of chunksize bytes
-    if (extend_heap(chunksize) == NULL) {
+    if (extend_heap(_MM_HEAP_REQUEST_CHUNKSIZE) == NULL) {
         goto _mmf_init_heap_failure;
     }
 
@@ -72,23 +69,22 @@ _mmf_init_heap_failure:
 
 /**
  * @brief Extend the heap in response to allocation request.
- * @param[in] size Amount of space requested by client
+ * @param[in] num_pages Number of pages requested by frontend
  * @return pointer to allocated payload, NULL if error occurred.
  */
-void *malloc(size_t size) {
-    size_t asize;      // Adjusted block size
-    size_t extendsize; // Amount to extend heap if no fit is found
+void *_mm_midend_request(size_t num_pages) {
+    size_t request_size, extendsize;
     block_t *block;
     void *bp = NULL;
 
-    // Initialize heap if it isn't initialized
-    // Mutex is acquired within this function
+    // Initialize heap if it isn't already
     if (heap_start == NULL) {
         _mmf_init_heap();
     }
 
     // Ignore spurious request
-    if (size == 0) {
+    if (num_pages == 0) {
+        io_msafe_eprintf_dbg("Error: requesting 0 pages.\n");
         return bp; // NULL
     }
 
@@ -96,16 +92,15 @@ void *malloc(size_t size) {
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
-    asize = round_up(size + wsize, dsize);
-    asize = max(asize, min_block_size);
+    request_size = round_up((num_pages * _MM_PAGESIZE) + wsize, SYS_MM_ALIGN);
 
     // Search the free list for a fit
-    block = find_fit(asize);
+    block = find_fit(request_size);
 
     // If no fit is found, request more memory, and then and place the block
     if (block == NULL) {
         // Always request at least chunksize
-        extendsize = max(asize, chunksize);
+        extendsize = max(request_size, _MM_HEAP_REQUEST_CHUNKSIZE);
         block = extend_heap(extendsize);
         // extend_heap returns an error
         if (block == NULL) {
@@ -125,7 +120,7 @@ void *malloc(size_t size) {
     write_block(block, block_size, true, prev_alloc, prev_mini);
 
     // Try to split the block if too large
-    split_block(block, asize);
+    split_block(block, request_size);
 
     bp = header_to_payload(block);
 
@@ -134,29 +129,22 @@ _malloc_finish:
     return bp;
 }
 
-/**
- * @brief Mark an allocated region on the heap as free.
- *
- * @param[in] ptr Pointer to the start of the allocated block.
- */
-void free(void *ptr) {
+void _mm_midend_return(void *ptr) {
 
     if (ptr == NULL) return;
 
     // cannot free if heap is uninit
     if (!heap_start) {
-        io_msafe_eprintf("Fatal: cannot free on uninit heap.\n");
+        io_msafe_eprintf("Fatal: cannot return on uninit heap.\n");
     }
 
     pthread_mutex_lock(&global_lock);
-
-    // Should we make provisions for multiple threads freeing?
     
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
 
     if (!get_alloc(block))  {
-        io_msafe_eprintf("Fatal: cannot free freed block.\n");
+        io_msafe_eprintf("Fatal: cannot return freed block.\n");
         exit(1);
     }
 
@@ -171,81 +159,4 @@ void free(void *ptr) {
     coalesce_block(block);
 
     pthread_mutex_unlock(&global_lock);
-}
-
-/**
- * @brief Move a specified amount of memory from previously allocated area
- * to a new location in memory.
- * If size of destination is greater, extra blocks are not initialized.
- *
- * @param[in] ptr Pointer to a block in the heap.
- * @param[in] size The size of the destination block.
- * @return A pointer to the newly allocated block.
- */
-void *realloc(void *ptr, size_t size) {
-    block_t *block = payload_to_header(ptr);
-    size_t copysize;
-    void *newptr;
-
-    // If size == 0, then free block and return NULL
-    if (size == 0) {
-        free(ptr);
-        return NULL;
-    }
-
-    // If ptr is NULL, then equivalent to malloc
-    if (ptr == NULL) {
-        return malloc(size);
-    }
-
-    // Otherwise, proceed with reallocation
-    newptr = malloc(size);
-
-    // If malloc fails, the original block is left untouched
-    if (newptr == NULL) {
-        return NULL;
-    }
-
-    // Copy the old data
-    copysize = get_payload_size(block); // gets size of old payload
-    if (size < copysize) {
-        copysize = size;
-    }
-    memcpy(newptr, ptr, copysize);
-
-    // Free the old block
-    free(ptr);
-
-    return newptr;
-}
-
-/**
- * @brief Allocate an array of elements onto the heap and initialize all
- * contents to zero.
- *
- * @param[in] nmemb The number of elements in the array.
- * @param[in] size The size of each element in the array.
- * @return A pointer to the new allocated array.
- */
-void *calloc(size_t nmemb, size_t size) {
-    void *ptr;
-    size_t asize = nmemb * size;
-
-    if (nmemb == 0) {
-        return NULL;
-    }
-    if (asize / nmemb != size) {
-        // Multiplication overflowed
-        return NULL;
-    }
-
-    ptr = malloc(asize);
-    if (ptr == NULL) {
-        return NULL;
-    }
-
-    // Initialize all bits to 0
-    memset(ptr, 0, asize);
-
-    return ptr;
 }

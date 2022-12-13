@@ -20,9 +20,6 @@ miniblock_t *miniblock_pointer = NULL;
 /** @brief Array of explicit lists segregated by size class */
 block_t *seglists[NUM_CLASSES];
 
-/** @brief Minimum extend size of heap */
-size_t chunksize = CHUNK_SIZE;
-
 /**
  * @brief Returns the maximum of two integers.
  * @param[in] x

@@ -21,5 +21,6 @@
 #define TOTAL_ALLOC_SPACE (1UL << 30) /* 1 GiB */
 #endif
 #define TRY_ALLOC_START (void *)0x8000000
+#define _MM_PAGESIZE 4096UL /* internal page size */
 
 #endif // _COMMON_H

@@ -2,13 +2,12 @@
 #define _MM_MIDEND_H
 
 #include "mm-backend.h"
+#include "mm-midend-aux.h"
 #include <pthread.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 
-extern void *malloc(size_t size);
-extern void free(void *ptr);
-extern void *calloc(size_t nmemb, size_t size);
-extern void *realloc(void *ptr, size_t size);
+void *_mm_midend_request(size_t num_pages);
+void _mm_midend_return(void *ptr);
 
-#endif /*_MM_FRONTEND_H */
+#endif /*_MM_MIDEND_H */

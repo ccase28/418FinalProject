@@ -10,7 +10,8 @@
 #define NUM_ITERS 100
 
 /** @brief Minimum size by which the heap extends*/
-#define CHUNK_SIZE 1 << 12
+#define _MM_HEAP_REQUEST_CHUNKSIZE 1 << 12
+#define SYS_MM_ALIGN 16
 
 typedef uint64_t word_t;
 
@@ -263,4 +264,4 @@ void split_block(block_t *block, size_t asize);
  */
 block_t *find_fit(size_t asize);
 
-#endif /* _MM_MIDEND_H */
+#endif /* _MM_MIDEND_AUX_H */
