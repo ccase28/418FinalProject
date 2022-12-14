@@ -24,11 +24,13 @@ static __thread struct thread_metadata_region * _thread_metadata = NULL;
 */
 struct superblock_descriptor {
   void      *payload;
+  struct {
   uint32_t  size_class; // constant
   uint8_t   sb_prev_index;
   uint8_t   sb_next_index;
   uint8_t   sb_curr_index;
-  uint8_t   unused;
+  uint8_t   num_available;
+  } info;
   uint8_t   obj_list[_mmf_objects_per_sb];
 }; // 144 bytes
 
@@ -57,6 +59,12 @@ struct thread_metadata_region {
   size_class_header headers[_mmf_num_size_classes];
   sb_desc_region descriptors[_mmf_num_size_classes];
 }; // around 55kb, more if descriptor count = 64
+
+static bool _mmf_cas(uint64_t *dest, uint64_t swapval, uint64_t cmpval);
+
+static bool _mmf_atomic_inc(uint64_t *dest, uint64_t incval);
+
+static bool _mmf_atomic_dec(uint64_t *dest, uint64_t decval);
 
 static size_t round_request_size(size_t reqsize) {
   // edge cases
@@ -168,11 +176,31 @@ static pid_t _mmf_thread_init_metadata(void) {
   return internal_tid;
 }
 
+void *_malloc_active(size_class_header *header) {
+  struct superblock_descriptor *active = header->sb_active;
+  uint8_t curr_available;
+  
+  if (!active) {
+    return NULL; // empty list
+  }
+
+  // reserve slot
+  do {
+    curr_available = active->info.num_available;
+    if (curr_available == 0) {
+      return NULL;
+    }
+    
+  }
+  if (info.num_available == 0) {
+    return NULL;
+  }
+}
+
 void *malloc(size_t size) {
   size_t objsize;
   short sc_index;
   size_class_header *req_size_class;
-  struct superblock_descriptor *desc;
   void *payload = NULL;
   
   if (size == 0) return NULL;
@@ -193,12 +221,11 @@ void *malloc(size_t size) {
     return _mm_midend_request(objsize / _MM_PAGESIZE);
   }
   req_size_class = &_thread_metadata->headers[sc_index];
-  desc = &_thread_metadata->descriptors[sc_index];
   
   while (true) {
-    payload = malloc_active();
+    payload = _malloc_active(req_size_class);
     if (payload) return payload;
-    payload = malloc_new();
+    payload = malloc_new(req_size_class);
     if (payload) return payload;
   }
 
