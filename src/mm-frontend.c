@@ -1,20 +1,21 @@
 
 #include "mm-frontend.h"
 
-static const int _mmf_objects_per_sb = 128;
-static const int _mmf_max_sb_per_class = 32;
-static const int _mmf_small_threshold = 8192;
+#define _MMF_OBJECTS_PER_SB 128
+#define _MMF_MAX_SB_PER_CLASS 32
+#define _MMF_NUM_SIZE_CLASSES 12
+#define _MMF_SMALL_THRESHOLD 8192
+
+/* up to 2 pages is considered "small" */
 static const int _mmf_small_size_classes[] = {
   16, 32, 48, 64, 72, 128, 256, 512,
   1024, 2048, 4096, 8192
-}; /* up to 2 pages is considered "small" */
-static const int _mmf_num_size_classes = 
-  sizeof(_mmf_small_size_classes) / sizeof(int);
+};
 
 static size_t _mmf_tid_hash_counter = 0;
 static __thread struct thread_metadata_region * _thread_metadata = NULL;
 
-static enum _mmf_alloc_type {_MMF_ALLOC, _MMF_FREE};
+enum _mmf_alloc_type {_MMF_ALLOC, _MMF_FREE};
 
 /**
  * Node in a circular unrolled doubly-linked list.
@@ -22,7 +23,7 @@ static enum _mmf_alloc_type {_MMF_ALLOC, _MMF_FREE};
  * a given size class. The size of the payload block
  * is (128 * size_class).
 */
-static struct superblock_descriptor {
+struct superblock_descriptor {
   void      *payload;
   struct {
   uint16_t  size_class;     /* Size of blocks the superblock contains */
@@ -32,12 +33,12 @@ static struct superblock_descriptor {
   uint8_t   freelist_head;  /* Head index of inner free list */
   uint8_t   unused[2];      /* Padding; could be used later */
   };
-  uint8_t   obj_list[_mmf_objects_per_sb];  /* Free list */
+  uint8_t   obj_list[_MMF_OBJECTS_PER_SB];  /* Free list */
 }; // 144 bytes
 
 typedef 
   struct superblock_descriptor 
-  sb_desc_region[_mmf_max_sb_per_class];
+  sb_desc_region[_MMF_MAX_SB_PER_CLASS];
 
 /**
  * A header that contains information about the 
@@ -57,12 +58,12 @@ typedef struct {
   uint8_t  sb_active;                     /* Index of the active superblock */
   uint8_t  active_sb_count;               /* Number of active superblocks */
   uint8_t  sb_inactive_head;                 /* Head of the inactive list */
-  uint8_t  sb_inactive_list[_mmf_max_sb_per_class];
+  uint8_t  sb_inactive_list[_MMF_MAX_SB_PER_CLASS];
 } size_class_header; // 16 bytes
 
-static struct thread_metadata_region {
-  size_class_header headers[_mmf_num_size_classes];
-  sb_desc_region descriptors[_mmf_num_size_classes];
+struct thread_metadata_region {
+  size_class_header headers[_MMF_NUM_SIZE_CLASSES];
+  sb_desc_region descriptors;
 }; // around 55kb, more if descriptor count = 64
 
 /* Get a pointer to the size class' active superblock. */
@@ -70,8 +71,11 @@ static inline struct superblock_descriptor *get_active_sb(size_class_header *h) 
   return &h->sb_start[h->sb_active];
 }
 
-static inline struct superblock_descriptor *get_prev_sb(size_class_header *h,
-                                            struct superblock_descriptor *sb) {
+static inline struct superblock_descriptor *
+get_prev_sb(size_class_header *h,struct superblock_descriptor *sb) 
+__attribute__ ((unused));
+static inline struct superblock_descriptor *
+get_prev_sb(size_class_header *h,struct superblock_descriptor *sb) {
   return &h->sb_start[sb->sb_prev_index];
 }
 
@@ -80,7 +84,18 @@ static inline struct superblock_descriptor *get_next_sb(size_class_header *h,
   return &h->sb_start[sb->sb_next_index];
 }
 
-static bool _mmf_cas(uint64_t *dest, uint64_t swapval, uint64_t cmpval);
+static bool _mmf_cas8(uint8_t *dest, uint8_t swapval, uint8_t cmpval) {
+  __asm__(
+    "movb %dl, %al\n\t"
+    "xor %ecx, %ecx\n\t"
+    "lock cmpxchg %sil, (%rdi)\n\t"
+    "mov $1, %eax\n\t"  // return 1
+    "cmovnz %ecx, %eax\n\t" // 0 if compare fails
+    "ret\n\t"
+  );
+  io_msafe_eprintf("Error: no return from CAS.\n");
+  return true;
+}
 
 // TODO: unit test
 static size_t round_request_size(size_t reqsize) {
@@ -94,7 +109,7 @@ static size_t round_request_size(size_t reqsize) {
 }
 
 static short sc_index_from_size(size_t normsize) {
-  if (normsize > _mmf_small_threshold) {
+  if (normsize > _MMF_SMALL_THRESHOLD) {
     return -1;
   }
   switch (normsize) {
@@ -147,7 +162,7 @@ static pid_t _mmf_hash_tid(pid_t sys_tid) {
       errno = ENOMEM;
       return -1;
   }
-  _mm_mfence();
+  // _mm_mfence();
   pthread_mutex_unlock(&_mmf_tid_lock);
   return ret;
 }
@@ -187,7 +202,7 @@ static pid_t _mmf_thread_init_metadata(void) {
   }
   /* Set pointers for all headers;
      head of descriptor list should be null initially. */
-  for (int i = 0; i < _mmf_num_size_classes; i++) {
+  for (int i = 0; i < _MMF_NUM_SIZE_CLASSES; i++) {
     struct superblock_descriptor *desc = &region_start->descriptors[i];
     size_class_header *header = &region_start->headers[i];
     uint16_t size_limit = _mmf_small_size_classes[i];
@@ -195,7 +210,7 @@ static pid_t _mmf_thread_init_metadata(void) {
     header->active_sb_count = 0;
     header->sb_active = 0; // technically unnecessary
     header->sb_inactive_head = 0;
-    for (uint8_t j = 0; j < _mmf_max_sb_per_class; j++) {
+    for (uint8_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
       header->sb_inactive_list[j] = j + 1;
     }
     header->size_class = size_limit;
@@ -212,8 +227,8 @@ static void add_new_superblock(size_class_header *header,
 
   /* Find a new superblock to use. */
   sb_reclaim_index = header->sb_inactive_head;
-  io_msafe_assert(sb_reclaim_index < _mmf_max_sb_per_class);
-  io_msafe_assert(header->active_sb_count < _mmf_max_sb_per_class);
+  io_msafe_assert(sb_reclaim_index < _MMF_MAX_SB_PER_CLASS);
+  io_msafe_assert(header->active_sb_count < _MMF_MAX_SB_PER_CLASS);
   sb = &header->sb_start[sb_reclaim_index];
 
   /* Write new internal free stack. */
@@ -250,8 +265,8 @@ static void add_new_superblock(size_class_header *header,
 static bool augment_size_class(size_class_header *header) {
   // Request more pages from midend
   void *pages;
-  size_t request_pages, request_size, sb_count, objs_per_sb;
-  size_t max_sb_storage, rem, bsize = header->size_class;
+  size_t request_pages, objs_per_sb;
+  size_t bsize = header->size_class;
 
   /* Everything should be able to fit into one superblock. */
   if (bsize <= 64) {
@@ -266,7 +281,7 @@ static bool augment_size_class(size_class_header *header) {
   }
 
   // build up linked list
-  if (header->active_sb_count == _mmf_max_sb_per_class) {
+  if (header->active_sb_count == _MMF_MAX_SB_PER_CLASS) {
     io_msafe_eprintf(
       "Unable to allocate more data: superblock limit reached.\n");
     return false;
@@ -274,11 +289,11 @@ static bool augment_size_class(size_class_header *header) {
   pages = _mm_midend_request_pages(request_pages);
   if (NULL == pages) {
     io_msafe_eprintf(
-      "Error requesting %lu bytes from midend.\n",
-      request_size);
+      "Error requesting %lu pages from midend.\n",
+      request_pages);
   }
   objs_per_sb = (request_pages * _MM_PAGESIZE) / bsize;
-  io_msafe_assert(objs_per_sb <= _mmf_objects_per_sb);
+  io_msafe_assert(objs_per_sb <= _MMF_OBJECTS_PER_SB);
   add_new_superblock(header, pages, objs_per_sb);
   return true;
 }
@@ -286,9 +301,9 @@ static bool augment_size_class(size_class_header *header) {
 /**
  * @brief Return free superblocks to page heap.
 */
-static void cleanup_size_class(size_class_header *header) {
-  return;
-}
+// static void cleanup_size_class(size_class_header *header) {
+//   return;
+// }
 
 static void *malloc_active(size_class_header *header) {
   uint8_t curr_available;
@@ -300,8 +315,8 @@ static void *malloc_active(size_class_header *header) {
     return NULL; // empty list
   }
 
-// reserve slot
-get_active_block: do {
+  // reserve slot
+  do {
     curr_available = active->num_available;
     if (curr_available == 0) {
       // switch to next superblock
@@ -310,7 +325,7 @@ get_active_block: do {
     }
   // restrict to 8 bits
 
-  } while (!_mmf_cas(&active->num_available, curr_available + 1, curr_available));
+  } while (!_mmf_cas8(&active->num_available, curr_available + 1, curr_available));
   /* slot reserved */
   // pop block from free list
   uint8_t *block_list = active->obj_list;
@@ -318,11 +333,11 @@ get_active_block: do {
   do {
     cur_head_idx = active->freelist_head;
     cur_head_node = block_list[cur_head_idx];
-    next_head_idx = _mmf_get_next_free(cur_head_node);
+    next_head_idx = block_list[cur_head_node]; // no alloc bit
     /* if payload head is still cur_head_idx, swap it with next_head_idx */
-  } while (!_mmf_cas(&active->freelist_head, next_head_idx, cur_head_idx));
+  } while (!_mmf_cas8(&active->freelist_head, next_head_idx, cur_head_idx));
   // _mmf_mark_block(block_list, _MMF_ALLOC); // only needed for RA
-  io_msafe_assert(cur_head_idx < _mmf_objects_per_sb);
+  io_msafe_assert(cur_head_idx < _MMF_OBJECTS_PER_SB);
   return &((search_obj_t *)active->payload)[cur_head_idx];
 }
 

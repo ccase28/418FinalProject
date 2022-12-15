@@ -75,7 +75,7 @@ _init_heap_failure:
  * @return pointer to allocated payload, NULL if error occurred.
  */
 void *_mm_midend_request_pages(size_t num_pages) {
-    return _mm_midend_request(num_pages * _MM_PAGESIZE);
+    return _mm_midend_request_bytes(num_pages * _MM_PAGESIZE);
 }
 
 void *_mm_midend_request_bytes(size_t num_bytes) {
