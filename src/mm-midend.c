@@ -4,6 +4,7 @@
  * @brief An interface to the custom malloc suite.
  * WARNING: Do not call malloc-dependent library functions (such as printf)
  *          from within any functions in this file. This will deadlock.
+ * TODO: get rid of miniblock business
 */
 
 #include "mm-backend.h"
@@ -72,7 +73,11 @@ _mmf_init_heap_failure:
  * @param[in] num_pages Number of pages requested by frontend
  * @return pointer to allocated payload, NULL if error occurred.
  */
-void *_mm_midend_request(size_t num_pages) {
+void *_mm_midend_request_pages(size_t num_pages) {
+    return _mm_midend_request(num_pages * _MM_PAGESIZE);
+}
+
+void *_mm_midend_request_bytes(size_t num_bytes) {
     size_t request_size, extendsize;
     block_t *block;
     void *bp = NULL;
@@ -83,7 +88,7 @@ void *_mm_midend_request(size_t num_pages) {
     }
 
     // Ignore spurious request
-    if (num_pages == 0) {
+    if (num_bytes == 0) {
         io_msafe_eprintf_dbg("Error: requesting 0 pages.\n");
         return bp; // NULL
     }
@@ -92,7 +97,7 @@ void *_mm_midend_request(size_t num_pages) {
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
-    request_size = round_up((num_pages * _MM_PAGESIZE) + wsize, SYS_MM_ALIGN);
+    request_size = round_up(num_bytes + wsize, SYS_MM_ALIGN);
 
     // Search the free list for a fit
     block = find_fit(request_size);

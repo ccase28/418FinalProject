@@ -10,7 +10,7 @@
 #define NUM_ITERS 100
 
 /** @brief Minimum size by which the heap extends*/
-#define _MM_HEAP_REQUEST_CHUNKSIZE 1 << 12
+#define _MM_HEAP_REQUEST_CHUNKSIZE (1 << 15)
 #define SYS_MM_ALIGN 16
 
 typedef uint64_t word_t;
@@ -48,7 +48,7 @@ static const size_t wsize = sizeof(word_t);
 static const size_t dsize = 2 * wsize;
 
 /** @brief Minimum block size (bytes) */
-static const size_t min_block_size = dsize;
+static const size_t min_block_size = _MM_PAGESIZE + dsize;
 
 /** @brief Mask that indicates the allocated bit in header */
 static const word_t alloc_mask = 0x1;
