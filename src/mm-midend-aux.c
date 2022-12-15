@@ -1,7 +1,7 @@
 /**
- * @file mm-frontend-aux.c
+ * @file mm-midend-aux.c
  * @author Makoto Tomokiyo <mtomokiy@andrew.cmu.edu>
- * @brief Auxiliary functions for allocator frontend.
+ * @brief Auxiliary functions for allocator middle end.
 */
 
 #include "mm-midend-aux.h"

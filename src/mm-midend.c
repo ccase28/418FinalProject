@@ -16,17 +16,18 @@ extern miniblock_t *miniblock_pointer;
 extern block_t *seglists[];
 extern size_t pagesize;
 
-pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
+/* Access to central free list is serialized but uncommon */
+pthread_mutex_t midend_central_freelist = PTHREAD_MUTEX_INITIALIZER;
 
 /**
- * @brief Initialize the heap.
+ * @brief Initialize the central page heap.
  * @return true if initialization was successful
  */
-static bool _mmf_init_heap(void) {
+static bool _init_heap(void) {
     int trylock_return;
     uint64_t *start;
 
-    trylock_return = pthread_mutex_trylock(&global_lock);
+    trylock_return = pthread_mutex_trylock(&midend_central_freelist);
     switch (trylock_return) {
         case 0:
         case EBUSY: // either thread gets it, or another is using
@@ -41,7 +42,7 @@ static bool _mmf_init_heap(void) {
 
     // Create the initial empty heap
     if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
-        goto _mmf_init_heap_failure;
+        goto _init_heap_failure;
 
     start[0] = pack(0, true, true, false); // Heap prologue (block footer)
     start[1] = pack(0, true, true, false); // Heap epilogue (block header)
@@ -54,17 +55,17 @@ static bool _mmf_init_heap(void) {
     memset(seglists, 0, NUM_CLASSES * sizeof(void *));
 
     if (extend_heap(_MM_HEAP_REQUEST_CHUNKSIZE) == NULL) {
-        goto _mmf_init_heap_failure;
+        goto _init_heap_failure;
     }
 
     // NOTE: 
     insert_free_block((block_t *)heap_start);
 
-    pthread_mutex_unlock(&global_lock);
+    pthread_mutex_unlock(&midend_central_freelist);
     return true;
 
-_mmf_init_heap_failure:
-    pthread_mutex_unlock(&global_lock);
+_init_heap_failure:
+    pthread_mutex_unlock(&midend_central_freelist);
     return false;
 }
 
@@ -84,7 +85,7 @@ void *_mm_midend_request_bytes(size_t num_bytes) {
 
     // Initialize heap if it isn't already
     if (heap_start == NULL) {
-        _mmf_init_heap();
+        _init_heap();
     }
 
     // Ignore spurious request
@@ -93,7 +94,7 @@ void *_mm_midend_request_bytes(size_t num_bytes) {
         return bp; // NULL
     }
 
-    pthread_mutex_lock(&global_lock);
+    pthread_mutex_lock(&midend_central_freelist);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -130,7 +131,7 @@ void *_mm_midend_request_bytes(size_t num_bytes) {
     bp = header_to_payload(block);
 
 _malloc_finish:
-    pthread_mutex_unlock(&global_lock);
+    pthread_mutex_unlock(&midend_central_freelist);
     return bp;
 }
 
@@ -143,7 +144,7 @@ void _mm_midend_return(void *ptr) {
         io_msafe_eprintf("Fatal: cannot return on uninit heap.\n");
     }
 
-    pthread_mutex_lock(&global_lock);
+    pthread_mutex_lock(&midend_central_freelist);
     
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
@@ -163,5 +164,5 @@ void _mm_midend_return(void *ptr) {
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
 
-    pthread_mutex_unlock(&global_lock);
+    pthread_mutex_unlock(&midend_central_freelist);
 }

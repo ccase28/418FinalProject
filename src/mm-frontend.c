@@ -12,7 +12,6 @@ static const int _mmf_num_size_classes =
   sizeof(_mmf_small_size_classes) / sizeof(int);
 
 static size_t _mmf_tid_hash_counter = 0;
-static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
 static __thread struct thread_metadata_region * _thread_metadata = NULL;
 
 static enum _mmf_alloc_type {_MMF_ALLOC, _MMF_FREE};
@@ -26,13 +25,14 @@ static enum _mmf_alloc_type {_MMF_ALLOC, _MMF_FREE};
 static struct superblock_descriptor {
   void      *payload;
   struct {
-  uint32_t  size_class; // TODO: maybe 16 instead
-  uint8_t   sb_prev_index;
-  uint8_t   sb_next_index;
-  uint8_t   num_available;
-  uint8_t   payload_head;
+  uint16_t  size_class;     /* Size of blocks the superblock contains */
+  uint8_t   sb_prev_index;  /* Index of previous active superblock */
+  uint8_t   sb_next_index;  /* Index of next active superblock */
+  uint8_t   num_available;  /* Number of free objects in superblock */
+  uint8_t   freelist_head;  /* Head index of inner free list */
+  uint8_t   unused[2];      /* Padding; could be used later */
   };
-  uint8_t   obj_list[_mmf_objects_per_sb];
+  uint8_t   obj_list[_mmf_objects_per_sb];  /* Free list */
 }; // 144 bytes
 
 typedef 
@@ -52,10 +52,12 @@ typedef
  * it gets padded anyway
 */
 typedef struct {
-  uint32_t size_class;
-  uint32_t active_sb_count;
   struct superblock_descriptor *sb_start;
   struct superblock_descriptor *sb_active;
+  uint32_t size_class;
+  uint8_t active_sb_count; // <= # sbs per class
+  uint8_t sb_empty_head; // ditto
+  uint8_t sb_empty_list[_mmf_max_sb_per_class];
 } size_class_header; // 16 bytes
 
 static struct thread_metadata_region {
@@ -64,10 +66,6 @@ static struct thread_metadata_region {
 }; // around 55kb, more if descriptor count = 64
 
 static bool _mmf_cas(uint64_t *dest, uint64_t swapval, uint64_t cmpval);
-
-static bool _mmf_atomic_inc(uint64_t *dest, uint64_t incval);
-
-static bool _mmf_atomic_dec(uint64_t *dest, uint64_t decval);
 
 // TODO: unit test
 static size_t round_request_size(size_t reqsize) {
@@ -123,19 +121,20 @@ static short sc_index_from_size(size_t normsize) {
  * so probably not a priority
 */
 static pid_t _mmf_hash_tid(pid_t sys_tid) {
-    (void) sys_tid;
-    pthread_mutex_lock(&_mmf_tid_lock);
-    pid_t ret = _mmf_tid_hash_counter++;
-    if (_mmf_tid_hash_counter >= _MM_HARD_THREAD_LIMIT) {
-        io_msafe_eprintf(
-            "FAILURE: concurrent thread count exceeds max of %d.\n",
-            _MM_HARD_THREAD_LIMIT);
-        errno = ENOMEM;
-        return -1;
-    }
-    _mm_mfence();
-    pthread_mutex_unlock(&_mmf_tid_lock);
-    return ret;
+  (void) sys_tid;
+  static pthread_mutex_t _mmf_tid_lock = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_lock(&_mmf_tid_lock);
+  pid_t ret = _mmf_tid_hash_counter++;
+  if (_mmf_tid_hash_counter >= _MM_HARD_THREAD_LIMIT) {
+      io_msafe_eprintf(
+          "FAILURE: concurrent thread count exceeds max of %d.\n",
+          _MM_HARD_THREAD_LIMIT);
+      errno = ENOMEM;
+      return -1;
+  }
+  _mm_mfence();
+  pthread_mutex_unlock(&_mmf_tid_lock);
+  return ret;
 }
 
 /**
@@ -174,20 +173,53 @@ static pid_t _mmf_thread_init_metadata(void) {
   /* Set pointers for all headers;
      head of descriptor list should be null initially. */
   for (int i = 0; i < _mmf_num_size_classes; i++) {
-    region_start->headers[i].sb_start = &region_start->descriptors[i];
+    struct superblock_descriptor *desc = &region_start->descriptors[i];
+    size_class_header *header = &region_start->headers[i];
+    uint16_t size_limit = _mmf_small_size_classes[i];
+    header->sb_start = desc;
+    header->active_sb_count = 0;
+    header->sb_active = NULL; // technically unnecessary
+    header->sb_empty_head = 0;
+    for (uint8_t j = 0; j < _mmf_max_sb_per_class; j++) {
+      header->sb_empty_list[j] = j + 1;
+    }
+    header->size_class = size_limit;
+    desc->size_class = size_limit;
   }
   _thread_metadata = region_start;
   return internal_tid;
 }
 
+static void add_new_superblock(size_class_header *header, 
+                              void *pages, size_t obj_count) {
+  struct superblock_descriptor *sb;
+  uint8_t sb_reclaim_index;
+  /* Find a new superblock to use. */
+  sb_reclaim_index = header->sb_empty_head;
+  io_msafe_assert(sb_reclaim_index < _mmf_max_sb_per_class);
+  sb = &header->sb_start[sb_reclaim_index];
+
+  /* Write new internal free stack. */
+  sb->freelist_head = 0;
+  for (int i = 0; i < obj_count - 1; i++) {
+    sb->obj_list[i] = i + 1; /* don't write to last index */
+  }
+  sb->payload = pages;
+  sb->num_available = obj_count;
+
+  /* Add initialized superblock to list. */
+}
+
 /**
  * @brief Replenish a size class with superblocks from page heap.
 */
-static void augment_size_class(size_class_header *header) {
+static bool augment_size_class(size_class_header *header) {
   // Request more pages from midend
   void *pages;
   size_t request_pages, request_size, sb_count, objs_per_sb;
   size_t max_sb_storage, rem, bsize = header->size_class;
+
+  /* Everything should be able to fit into one superblock. */
   if (bsize <= 64) {
     request_pages = 2;
     // request_size = 1UL << 13; // 8192
@@ -198,32 +230,23 @@ static void augment_size_class(size_class_header *header) {
     request_pages = 16;
     // request_size = 1UL << 16; // 64k
   }
-  
 
   // build up linked list
-  if (bsize > _MM_PAGESIZE) {
-    pages = _mm_midend_request_pages(request_pages);
-    if (NULL == pages) {
-      io_msafe_eprintf(
-        "Error requesting %lu bytes from midend.\n",
-        request_size);
-    }
-    objs_per_sb = (request_pages * _MM_PAGESIZE) / bsize;
-    sb_list_insert(header, pages, objs_per_sb);
+  if (header->active_sb_count == _mmf_max_sb_per_class) {
+    io_msafe_eprintf(
+      "Unable to allocate more data: superblock limit reached.\n");
+    return false;
   }
-  for (int i = 0; i < request_pages; i++) {
-    pages = _mm_midend_request_bytes(_MM_PAGESIZE);
-    if (NULL == pages) {
-      io_msafe_eprintf(
-        "Error requesting %lu bytes from midend.\n",
-        request_size);
-    }
-    if (bsize > _MM_PAGESIZE) {
-      objs_per_sb = 1;
-    } else {
-      objs_per_sb = _MM_PAGESIZE / bsize;
-    }
+  pages = _mm_midend_request_pages(request_pages);
+  if (NULL == pages) {
+    io_msafe_eprintf(
+      "Error requesting %lu bytes from midend.\n",
+      request_size);
   }
+  objs_per_sb = (request_pages * _MM_PAGESIZE) / bsize;
+  io_msafe_assert(objs_per_sb <= _mmf_objects_per_sb);
+  add_new_superblock(header, pages, objs_per_sb);
+  return true;
 }
 
 /**
@@ -259,11 +282,11 @@ get_active_block: do {
   uint8_t *block_list = active->obj_list;
   uint8_t cur_head_node, cur_head_idx, next_head_idx;
   do {
-    cur_head_idx = active->payload_head;
+    cur_head_idx = active->freelist_head;
     cur_head_node = block_list[cur_head_idx];
     next_head_idx = _mmf_get_next_free(cur_head_node);
     /* if payload head is still cur_head_idx, swap it with next_head_idx */
-  } while (!_mmf_cas(&active->payload_head, next_head_idx, cur_head_idx));
+  } while (!_mmf_cas(&active->freelist_head, next_head_idx, cur_head_idx));
   // _mmf_mark_block(block_list, _MMF_ALLOC); // only needed for RA
   io_msafe_assert(cur_head_idx < _mmf_objects_per_sb);
   return &((search_obj_t *)active->payload)[cur_head_idx];
