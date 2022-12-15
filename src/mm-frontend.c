@@ -46,24 +46,39 @@ typedef
  * sb_start: the start of the array containing all
  * superblock descriptors for the size class.
  * 
- * sb_active: A pointer to the active superblock.
+ * sb_active: The index of the active superblock.
  * This may be null.
  * TODO: we could make sb_active an index (char) but
  * it gets padded anyway
 */
 typedef struct {
-  struct superblock_descriptor *sb_start;
-  struct superblock_descriptor *sb_active;
-  uint32_t size_class;
-  uint8_t active_sb_count; // <= # sbs per class
-  uint8_t sb_empty_head; // ditto
-  uint8_t sb_empty_list[_mmf_max_sb_per_class];
+  struct superblock_descriptor *sb_start; /* Start of the superblock list */
+  uint32_t size_class;                    /* Size class of the superblock */
+  uint8_t  sb_active;                     /* Index of the active superblock */
+  uint8_t  active_sb_count;               /* Number of active superblocks */
+  uint8_t  sb_inactive_head;                 /* Head of the inactive list */
+  uint8_t  sb_inactive_list[_mmf_max_sb_per_class];
 } size_class_header; // 16 bytes
 
 static struct thread_metadata_region {
   size_class_header headers[_mmf_num_size_classes];
   sb_desc_region descriptors[_mmf_num_size_classes];
 }; // around 55kb, more if descriptor count = 64
+
+/* Get a pointer to the size class' active superblock. */
+static inline struct superblock_descriptor *get_active_sb(size_class_header *h) {
+  return &h->sb_start[h->sb_active];
+}
+
+static inline struct superblock_descriptor *get_prev_sb(size_class_header *h,
+                                            struct superblock_descriptor *sb) {
+  return &h->sb_start[sb->sb_prev_index];
+}
+
+static inline struct superblock_descriptor *get_next_sb(size_class_header *h,
+                                            struct superblock_descriptor *sb) {
+  return &h->sb_start[sb->sb_next_index];
+}
 
 static bool _mmf_cas(uint64_t *dest, uint64_t swapval, uint64_t cmpval);
 
@@ -178,10 +193,10 @@ static pid_t _mmf_thread_init_metadata(void) {
     uint16_t size_limit = _mmf_small_size_classes[i];
     header->sb_start = desc;
     header->active_sb_count = 0;
-    header->sb_active = NULL; // technically unnecessary
-    header->sb_empty_head = 0;
+    header->sb_active = 0; // technically unnecessary
+    header->sb_inactive_head = 0;
     for (uint8_t j = 0; j < _mmf_max_sb_per_class; j++) {
-      header->sb_empty_list[j] = j + 1;
+      header->sb_inactive_list[j] = j + 1;
     }
     header->size_class = size_limit;
     desc->size_class = size_limit;
@@ -194,9 +209,11 @@ static void add_new_superblock(size_class_header *header,
                               void *pages, size_t obj_count) {
   struct superblock_descriptor *sb;
   uint8_t sb_reclaim_index;
+
   /* Find a new superblock to use. */
-  sb_reclaim_index = header->sb_empty_head;
+  sb_reclaim_index = header->sb_inactive_head;
   io_msafe_assert(sb_reclaim_index < _mmf_max_sb_per_class);
+  io_msafe_assert(header->active_sb_count < _mmf_max_sb_per_class);
   sb = &header->sb_start[sb_reclaim_index];
 
   /* Write new internal free stack. */
@@ -207,7 +224,24 @@ static void add_new_superblock(size_class_header *header,
   sb->payload = pages;
   sb->num_available = obj_count;
 
-  /* Add initialized superblock to list. */
+  /* Add initialized superblock to list (after active). */
+  if (header->active_sb_count == 0) { /* no active superblocks */
+    header->sb_active = sb_reclaim_index;
+    sb->sb_prev_index = sb_reclaim_index; // self
+    sb->sb_next_index = sb_reclaim_index;
+  } else { /* at least 1 active superblock */
+    struct superblock_descriptor *cur_active = get_active_sb(header);
+    struct superblock_descriptor *nxt_active = get_next_sb(header, cur_active);
+    sb->sb_prev_index = header->sb_active;
+    sb->sb_next_index = cur_active->sb_next_index;
+    nxt_active->sb_prev_index = sb_reclaim_index;
+    cur_active->sb_next_index = sb_reclaim_index;
+  }
+
+  /* Remove initialized superblock from empty SB list. */
+  /* Bump head pointer one forward. It's ok if next is a bogus index if last */
+  header->sb_inactive_head = header->sb_inactive_list[header->sb_inactive_head];
+  header->active_sb_count++;
 }
 
 /**
@@ -258,7 +292,7 @@ static void cleanup_size_class(size_class_header *header) {
 
 static void *malloc_active(size_class_header *header) {
   uint8_t curr_available;
-  struct superblock_descriptor *active = header->sb_active;
+  struct superblock_descriptor *active = get_active_sb(header);
 
   typedef uint8_t search_obj_t[header->size_class];
   
