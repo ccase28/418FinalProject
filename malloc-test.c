@@ -1,16 +1,17 @@
 #include <stdio.h>
 #include "src/mm-frontend.h"
+#include "src/mm-frontend-aux.h"
 
 int main (void) {
+  uint8_t x = 2;
+  uint8_t y = 4;
+  uint8_t cmpval = 4;
+  if (_mmf_cas8(&y, x, cmpval)) {
+    io_msafe_eprintf("cas success: y is %d.\n", y);
+  } else {
+    io_msafe_eprintf("cas failed.\n");
+  }
   void *p = malloc(5);
-  // size_t i = 5;
-  // size_t *ip = (void *)1;
-  // _mmf_cas_lock_finalize((void **)&ip, (void *)&i);
-  // if (ip == (void *)1) {
-  //   printf("cas failed.\n");
-  // } else {
-  //   printf("new value: %lu. i was %lu.\n", *ip, i);
-  // }
 
 
   if (p == NULL) {
