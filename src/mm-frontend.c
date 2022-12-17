@@ -24,6 +24,7 @@ static void *malloc_active(size_class_header *header) {
   do {
     curr_available = active->num_available;
     if (curr_available == 0) {
+      // TODO: 
       // switch to next superblock
       // handle case where all superblocks are exhausted
       // (return null)
@@ -42,7 +43,7 @@ static void *malloc_active(size_class_header *header) {
     /* if payload head is still cur_head_idx, swap it with next_head_idx */
   } while (!_mmf_cas8(&active->freelist_head, next_head_idx, cur_head_idx));
   // _mmf_mark_block(block_list, _MMF_ALLOC); // only needed for RA
-  io_msafe_assert(cur_head_idx < _MMF_OBJECTS_PER_SB);
+  // io_msafe_assert(cur_head_idx < _MMF_OBJECTS_PER_SB);
   return &((search_obj_t *)active->payload)[cur_head_idx];
 }
 
@@ -53,7 +54,7 @@ void *malloc(size_t size) {
   void *payload = NULL;
   
   if (size == 0) return NULL;
-
+  // io_msafe_eprintf("malloc (%lu)\n", size);
   /* Initialize thread metadata */
   if (_thread_metadata == NULL &&
   _mmf_thread_init_metadata() < 0) {

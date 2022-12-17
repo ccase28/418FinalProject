@@ -16,6 +16,10 @@ __thread struct thread_metadata_region * _thread_metadata = NULL;
 
 /* Get a pointer to the size class' active superblock. */
 inline struct superblock_descriptor *get_active_sb(size_class_header *h) {
+  uint8_t idx = h->sb_active;
+  if (idx > _MMF_MAX_SB_PER_CLASS) { // no active block yet
+    return NULL;
+  }
   return &h->sb_start[h->sb_active];
 }
 
@@ -152,7 +156,7 @@ pid_t _mmf_thread_init_metadata(void) {
     uint16_t size_limit = _mmf_small_size_classes[i];
     header->sb_start = desc;
     header->active_sb_count = 0;
-    header->sb_active = 0; // technically unnecessary
+    header->sb_active = UINT8_MAX; // technically unnecessary
     header->sb_inactive_head = 0;
     for (uint8_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
       header->sb_inactive_list[j] = j + 1;
@@ -190,6 +194,11 @@ void add_new_superblock(size_class_header *header,
     sb->sb_next_index = sb_reclaim_index;
   } else { /* at least 1 active superblock */
     struct superblock_descriptor *cur_active = get_active_sb(header);
+    if (NULL == cur_active) { // no active header yet
+      header->sb_active = sb_reclaim_index;
+      header->sb_start[sb_reclaim_index].sb_next_index = sb_reclaim_index;
+      header->sb_start[sb_reclaim_index].sb_prev_index = sb_reclaim_index;
+    }
     struct superblock_descriptor *nxt_active = get_next_sb(header, cur_active);
     sb->sb_prev_index = header->sb_active;
     sb->sb_next_index = cur_active->sb_next_index;
@@ -211,10 +220,15 @@ bool augment_size_class(size_class_header *header) {
   void *pages;
   size_t bsize = header->size_class;
   size_t objs_per_sb = _MMF_OBJECTS_PER_SB;
-  if (bsize >= 1024) objs_per_sb <<= 2;
+  if (bsize >= 1024) objs_per_sb >>= 2;
   size_t max_sb_size = bsize * objs_per_sb;
   size_t request_bytes = round_up(max_sb_size, _MM_PAGESIZE);
 
+  if (header->active_sb_count == _MMF_MAX_SB_PER_CLASS) {
+    io_msafe_eprintf(
+      "Error: no more superblocks available for size class %lu.\n",
+      bsize);
+  }
   pages = _mm_midend_request_bytes(request_bytes);
   if (!pages) {
     io_msafe_eprintf(

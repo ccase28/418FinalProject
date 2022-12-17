@@ -9,7 +9,7 @@
 /** @brief Number of samples in average block size estimation */
 #define NUM_ITERS 100
 
-/** @brief Minimum size by which the heap extends*/
+/** @brief Minimum size by which the heap extends */
 #define _MM_HEAP_REQUEST_CHUNKSIZE (1 << 15)
 #define SYS_MM_ALIGN 16
 
@@ -67,7 +67,16 @@ static const word_t prev_mini_mask = 0x4;
 static const size_t search_depth = 18;
 
 /** @brief Set of size classes for segregated list */
-static const size_t size_classes[] = {16, 48, 64, 80, 96, 128, 256, 1024, 4096, 8192};
+static const size_t size_classes[] = {
+    _MM_PAGESIZE + dsize,
+    2 * _MM_PAGESIZE + dsize,
+    3 * _MM_PAGESIZE + dsize,
+    4 * _MM_PAGESIZE + dsize,
+    5 * _MM_PAGESIZE + dsize,
+    8 * _MM_PAGESIZE + dsize,
+    16 * _MM_PAGESIZE + dsize,
+    32 * _MM_PAGESIZE + dsize,
+    64 * _MM_PAGESIZE + dsize};
 
 /**
  * @brief Returns the maximum of two integers.
