@@ -3,7 +3,7 @@
 */
 
 #include "mm-frontend-aux.h"
-
+extern size_t bigcount;
 /* up to 2 pages is "small" */
 static const int _mmf_small_size_classes[] = {
   16, 32, 48, 64, 72, 128, 256, 512,
@@ -173,6 +173,7 @@ void add_new_superblock(size_class_header *header,
   struct superblock_descriptor *sb;
   uint8_t sb_reclaim_index;
 
+  io_msafe_assert(obj_count <= _MMF_OBJECTS_PER_SB);
   /* Find a new superblock to use. */
   sb_reclaim_index = header->sb_inactive_head;
   io_msafe_assert(sb_reclaim_index < _MMF_MAX_SB_PER_CLASS);
@@ -195,6 +196,9 @@ void add_new_superblock(size_class_header *header,
   } else { /* at least 1 active superblock */
     struct superblock_descriptor *cur_active = get_active_sb(header);
     if (NULL == cur_active) { // no active header yet
+      io_msafe_eprintf(
+        "Error: header has %u active blocks but cur_active index is %u.\n",
+        header->active_sb_count, header->sb_active);
       header->sb_active = sb_reclaim_index;
       header->sb_start[sb_reclaim_index].sb_next_index = sb_reclaim_index;
       header->sb_start[sb_reclaim_index].sb_prev_index = sb_reclaim_index;
@@ -220,7 +224,7 @@ bool augment_size_class(size_class_header *header) {
   void *pages;
   size_t bsize = header->size_class;
   size_t objs_per_sb = _MMF_OBJECTS_PER_SB;
-  if (bsize >= 1024) objs_per_sb >>= 2;
+  // if (bsize >= 1024) objs_per_sb >>= 2;
   size_t max_sb_size = bsize * objs_per_sb;
   size_t request_bytes = round_up(max_sb_size, _MM_PAGESIZE);
 
@@ -228,6 +232,7 @@ bool augment_size_class(size_class_header *header) {
     io_msafe_eprintf(
       "Error: no more superblocks available for size class %lu.\n",
       bsize);
+    io_msafe_eprintf("4096 count: %lu.\n", bigcount);
   }
   pages = _mm_midend_request_bytes(request_bytes);
   if (!pages) {
@@ -236,10 +241,10 @@ bool augment_size_class(size_class_header *header) {
       request_bytes);
     exit(1);
   }
-  io_msafe_eprintf_dbg(
-    "Adding superblock of %lu bytes containing "
-    "%lu objects of size %lu.\n",
-    request_bytes, objs_per_sb, bsize);
+  // io_msafe_eprintf_dbg(
+  //   "Adding superblock of %lu bytes containing "
+  //   "%lu objects of size %lu.\n",
+    // request_bytes, objs_per_sb, bsize);
   add_new_superblock(header, pages, objs_per_sb);
   return true;
 }

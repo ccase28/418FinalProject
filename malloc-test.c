@@ -13,6 +13,12 @@ int main (void) {
   }
   void *p = malloc(5);
 
+  for (int i = 0; i < 20; i++) {
+    p = malloc(5);
+    if (p == NULL) {
+      io_msafe_eprintf("MUILL.\n");
+    }
+  }
 
   if (p == NULL) {
     printf("malloc returned NULL.\n");

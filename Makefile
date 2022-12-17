@@ -14,11 +14,11 @@ clean:
 	rm -f *.o *.so
 	rm -f malloc-test driver
 
-malloc-test: malloc.so
+malloc-test: malloc.so malloc-test.c
 	export LD_PRELOAD=malloc.so
 	$(CC) $(CFLAGS) malloc-test.c malloc.so -o malloc-test
 
-driver: malloc.so 
+driver: malloc.so driver.c
 	export LD_PRELOAD=malloc.so
 	$(CC) $(CFLAGS) driver.c malloc.so -o driver
 

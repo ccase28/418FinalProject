@@ -7,11 +7,11 @@
 
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
-
+size_t bigcount = 0;
 extern __thread struct thread_metadata_region * _thread_metadata;
 
 static void *malloc_active(size_class_header *header) {
-  uint8_t curr_available;
+  uint8_t curr_available, curr_index = header->sb_active;
   struct superblock_descriptor *active = get_active_sb(header);
 
   typedef uint8_t search_obj_t[header->size_class];
@@ -20,20 +20,29 @@ static void *malloc_active(size_class_header *header) {
     return NULL; // empty list
   }
 
-  // reserve slot
+  /* reserve a slot */
   do {
+test_new_superblock:
     curr_available = active->num_available;
+    // io_msafe_eprintf("avail for class %u = %u.\n", header->size_class, curr_available);
     if (curr_available == 0) {
-      // TODO: 
-      // switch to next superblock
-      // handle case where all superblocks are exhausted
-      // (return null)
-    }
-  // restrict to 8 bits
+      /* if current superblock full, go to next */
+      curr_index = active->sb_next_index;
+      active = &header->sb_start[curr_index];
 
-  } while (!_mmf_cas8(&active->num_available, curr_available + 1, curr_available));
-  /* slot reserved */
-  // pop block from free list
+      /* traversed the whole list, nothing found */
+      if (curr_index == header->sb_active) {
+        return NULL;
+      } else {
+        goto test_new_superblock;
+      }
+    }
+  /* if current avail count is unchanged, decrement and push update */
+  } while (!_mmf_cas8(&active->num_available, curr_available - 1, curr_available));
+  /* slot reserved; use current as active */
+  header->sb_active = curr_index;
+
+  /* try to pop block from free list */
   uint8_t *block_list = active->obj_list;
   uint8_t cur_head_node, cur_head_idx, next_head_idx;
   do {
@@ -42,8 +51,6 @@ static void *malloc_active(size_class_header *header) {
     next_head_idx = block_list[cur_head_node]; // no alloc bit
     /* if payload head is still cur_head_idx, swap it with next_head_idx */
   } while (!_mmf_cas8(&active->freelist_head, next_head_idx, cur_head_idx));
-  // _mmf_mark_block(block_list, _MMF_ALLOC); // only needed for RA
-  // io_msafe_assert(cur_head_idx < _MMF_OBJECTS_PER_SB);
   return &((search_obj_t *)active->payload)[cur_head_idx];
 }
 
@@ -65,6 +72,9 @@ void *malloc(size_t size) {
   // objsize is a power of 2, and thus a multiple of pagesize
   // if greater than min threshold.
   objsize = round_request_size(size);
+  if (objsize == 4096) {
+    bigcount++;
+  }
   sc_index = sc_index_from_size(objsize);
   if (sc_index < 0) {
     // malloc from page heap
@@ -94,6 +104,8 @@ void free(void *ptr) {
  * @return A pointer to the newly allocated block.
  */
 void *realloc(void *ptr, size_t size) {
+    io_msafe_eprintf("FATAL: REALLOC.\n");
+    exit(1);
     // size_class_header *header;
     size_t copysize;
     void *newptr;
