@@ -21,8 +21,8 @@ struct superblock_descriptor {
   struct {  /* 64 bits for atomic compare-and-swap */
   uint16_t  size_class;     /* Size of blocks the superblock contains */
   uint8_t   num_available;  /* Number of free objects in superblock */
-  uint8_t   sb_prev_index;  /* Index of previous active superblock */
-  uint8_t   sb_next_index;  /* Index of next active superblock */
+  uint16_t   sb_prev_index;  /* Index of previous active superblock */
+  uint16_t   sb_next_index;  /* Index of next active superblock */
   uint8_t   freelist_head;  /* Head index of inner free list */
   uint8_t   unused[2];      /* Padding; could be used later */
   };
@@ -45,10 +45,10 @@ typedef
 typedef struct {
   struct superblock_descriptor *sb_start; /* Start of the superblock list */
   uint32_t size_class;                    /* Size class of the superblock */
-  uint8_t  sb_active;                     /* Index of the active superblock */
-  uint8_t  active_sb_count;               /* Number of active superblocks */
-  uint8_t  sb_inactive_head;              /* Head of the inactive list */
-  uint8_t  sb_inactive_list[_MMF_MAX_SB_PER_CLASS];
+  uint16_t  sb_active;                     /* Index of the active superblock */
+  uint16_t  active_sb_count;               /* Number of active superblocks */
+  uint16_t  sb_inactive_head;              /* Head of the inactive list */
+  uint16_t  sb_inactive_list[_MMF_MAX_SB_PER_CLASS];
 } size_class_header; // 16 bytes
 
 struct thread_metadata_region {

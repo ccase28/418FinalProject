@@ -3,6 +3,7 @@
 #include "src/mm-frontend-aux.h"
 
 int main (void) {
+  void *p, *q;
   uint8_t x = 2;
   uint8_t y = 4;
   uint8_t cmpval = 4;
@@ -11,7 +12,8 @@ int main (void) {
   } else {
     io_msafe_eprintf("cas failed.\n");
   }
-  void *p = malloc(5);
+  p = malloc(5);
+  q = p;
 
   for (int i = 0; i < 20; i++) {
     p = malloc(5);
@@ -20,12 +22,13 @@ int main (void) {
     }
   }
 
-  if (p == NULL) {
+  if (q == NULL) {
     printf("malloc returned NULL.\n");
   } else {
-    size_t *hdr = (size_t *)p - 1;
+    size_t *hdr = (size_t *)q - 1;
     size_t size = *hdr & ~0xFL; 
     printf("malloc returned pointer at address %p with size %lu.\n", p, size);
   }
+  free(q);
   return 0;
 }

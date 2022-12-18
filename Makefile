@@ -8,8 +8,8 @@ all: malloc.so
 %.o: $(SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-malloc.so: msafe-eprintf.o mm-midend.o mm-backend.o mm-midend-aux.o mm-frontend.o mm-frontend-aux.o
-	$(LD) $(LDFLAGS) -shared -o malloc.so mm-frontend.o mm-midend.o mm-midend-aux.o mm-backend.o msafe-eprintf.o mm-frontend-aux.o
+malloc.so: msafe-eprintf.o mm-midend.o mm-backend.o mm-midend-aux.o mm-pagemap.o mm-frontend.o mm-frontend-aux.o
+	$(LD) $(LDFLAGS) -shared -o malloc.so mm-frontend.o mm-midend.o mm-midend-aux.o mm-pagemap.o mm-backend.o msafe-eprintf.o mm-frontend-aux.o
 
 clean:
 	rm -f *.o *.so

@@ -3,6 +3,7 @@
 */
 
 #include "mm-frontend-aux.h"
+
 extern size_t bigcount;
 /* up to 2 pages is "small" */
 static const int _mmf_small_size_classes[] = {
@@ -35,8 +36,8 @@ inline struct superblock_descriptor *get_next_sb(size_class_header *h,
 
 bool _mmf_cas64(uint64_t *dest, uint64_t swapval, uint64_t cmpval) {
   __asm__(
-    "movb %rdx, %rax\n\t"
-    "xor %rcx, %rcx\n\t"
+    "movq %rdx, %rax\n\t"
+    "xorq %rcx, %rcx\n\t"
     "lock cmpxchg %rsi, (%rdi)\n\t"
     "mov $1, %rax\n\t"  // return 1
     "cmovnz %rcx, %rax\n\t" // 0 if compare fails
@@ -171,16 +172,17 @@ pid_t _mmf_thread_init_metadata(void) {
     header->sb_inactive_head = 0;
     for (uint8_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
       header->sb_inactive_list[j] = j + 1;
+      header->sb_start[j].size_class = size_limit;
     }
     header->size_class = size_limit;
-    desc->size_class = size_limit;
+    // desc->size_class = size_limit;
   }
   _thread_metadata = region_start;
   return 0;
 }
 
-void add_new_superblock(size_class_header *header, 
-                              void *pages, size_t obj_count) {
+void add_new_superblock(size_class_header *header, void *pages,
+                        size_t obj_count, size_t request_pages) {
   struct superblock_descriptor *sb;
   uint8_t sb_reclaim_index;
 
@@ -225,6 +227,13 @@ void add_new_superblock(size_class_header *header,
   /* Bump head pointer one forward. It's ok if next is a bogus index if last */
   header->sb_inactive_head = header->sb_inactive_list[header->sb_inactive_head];
   header->active_sb_count++;
+
+  /* Mark owner of new pages. */
+  (void)request_pages;
+  // for (int i = 0; i < request_pages; i++) {
+  //   uint8_t *mark_ptr = (uint8_t *)pages + (i * _MM_PAGESIZE);
+  //   pagemap_reallocate(mark_ptr, sb);
+  // }
 }
 
 /**
@@ -238,6 +247,7 @@ bool augment_size_class(size_class_header *header) {
   // if (bsize >= 1024) objs_per_sb >>= 2;
   size_t max_sb_size = bsize * objs_per_sb;
   size_t request_bytes = round_up(max_sb_size, _MM_PAGESIZE);
+  size_t request_pages = request_bytes / _MM_PAGESIZE;
 
   if (header->active_sb_count == _MMF_MAX_SB_PER_CLASS) {
     io_msafe_eprintf(
@@ -245,7 +255,8 @@ bool augment_size_class(size_class_header *header) {
       bsize);
     io_msafe_eprintf("4096 count: %lu.\n", bigcount);
   }
-  pages = _mm_midend_request_bytes(request_bytes);
+  // provision for header
+  pages = _mm_midend_request_bytes(request_bytes - 16);
   if (!pages) {
     io_msafe_eprintf(
       "Error requesting %lu bytes from midend.\n",
@@ -256,6 +267,6 @@ bool augment_size_class(size_class_header *header) {
   //   "Adding superblock of %lu bytes containing "
   //   "%lu objects of size %lu.\n",
     // request_bytes, objs_per_sb, bsize);
-  add_new_superblock(header, pages, objs_per_sb);
+  add_new_superblock(header, pages, objs_per_sb, request_pages);
   return true;
 }

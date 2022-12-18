@@ -68,15 +68,15 @@ static const size_t search_depth = 18;
 
 /** @brief Set of size classes for segregated list */
 static const size_t size_classes[] = {
-    _MM_PAGESIZE + dsize,
-    2 * _MM_PAGESIZE + dsize,
-    3 * _MM_PAGESIZE + dsize,
-    4 * _MM_PAGESIZE + dsize,
-    5 * _MM_PAGESIZE + dsize,
-    8 * _MM_PAGESIZE + dsize,
-    16 * _MM_PAGESIZE + dsize,
-    32 * _MM_PAGESIZE + dsize,
-    64 * _MM_PAGESIZE + dsize};
+    min_block_size,
+    2 * min_block_size,
+    3 * min_block_size,
+    4 * min_block_size,
+    5 * min_block_size,
+    8 * min_block_size,
+    16 * min_block_size,
+    32 * min_block_size,
+    64 * min_block_size};
 
 /**
  * @brief Returns the maximum of two integers.

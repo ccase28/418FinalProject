@@ -2,6 +2,7 @@
 #define _MM_FRONTEND_AUX_H
 
 #include "mm-cache-defines.h"
+#include "mm-pagemap.h"
 #include "mm-frontend.h"
 
 struct superblock_descriptor *get_active_sb(size_class_header *h);
@@ -25,8 +26,8 @@ pid_t _mmf_hash_tid(pid_t sys_tid) __attribute__ ((unused));
 
 pid_t _mmf_thread_init_metadata(void);
 
-void add_new_superblock(size_class_header *header, 
-                              void *pages, size_t obj_count);
+void add_new_superblock(size_class_header *header, void *pages,
+                        size_t obj_count, size_t request_pages);
 
 bool augment_size_class(size_class_header *header);
 

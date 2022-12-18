@@ -7,6 +7,8 @@
 
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
+#include "mm-pagemap.h"
+
 size_t bigcount = 0;
 extern __thread struct thread_metadata_region * _thread_metadata;
 
@@ -44,11 +46,10 @@ test_new_superblock:
 
   /* try to pop block from free list */
   uint8_t *block_list = active->obj_list;
-  uint8_t cur_head_node, cur_head_idx, next_head_idx;
+  uint8_t cur_head_idx, next_head_idx;
   do {
     cur_head_idx = active->freelist_head;
-    cur_head_node = block_list[cur_head_idx];
-    next_head_idx = block_list[cur_head_node]; // no alloc bit
+    next_head_idx = block_list[cur_head_idx];
     /* if payload head is still cur_head_idx, swap it with next_head_idx */
   } while (!_mmf_cas8(&active->freelist_head, next_head_idx, cur_head_idx));
   return &((search_obj_t *)active->payload)[cur_head_idx];
@@ -72,7 +73,7 @@ void *malloc(size_t size) {
   // objsize is a power of 2, and thus a multiple of pagesize
   // if greater than min threshold.
   objsize = round_request_size(size);
-  if (objsize == 4096) {
+  if (objsize == 4096) { // TODO: temporary
     bigcount++;
   }
   sc_index = sc_index_from_size(objsize);
@@ -92,6 +93,31 @@ void *malloc(size_t size) {
 
 void free(void *ptr) {
   return;
+  // if (ptr == NULL) return; // C standard
+  // struct superblock_descriptor *desc = pagemap_lookup(ptr);
+  // if (NULL == desc) { /* too large for cache */
+  //   io_msafe_eprintf(
+  //     "Size class not found for pointer %p.\n", ptr); 
+  //   return;
+  // }
+  // /* make sure pointer within bounds */
+  // size_t payload_idx = ((uintptr_t)ptr - (uintptr_t)desc->payload) / desc->size_class;
+  // io_msafe_assert(payload_idx <= _MMF_OBJECTS_PER_SB);
+
+  // /* push free block onto stack */
+  // uint8_t *block_list = desc->obj_list;
+  // uint8_t cur_head_idx, new_head_idx = (uint8_t)payload_idx;
+  // do {
+  //   cur_head_idx = desc->freelist_head;
+  //   block_list[new_head_idx] = cur_head_idx; // new->next = cur_head
+  //   /* if payload head is still cur_head_idx, swap it with new object */
+  // } while (!_mmf_cas8(&desc->freelist_head, new_head_idx, cur_head_idx));
+
+  // /* broadcast new availability */
+  // uint8_t avail_now;
+  // do {
+  //   avail_now = desc->num_available;
+  // } while (!_mmf_cas8(&desc->num_available, avail_now + 1, avail_now));
 }
 
 /**
