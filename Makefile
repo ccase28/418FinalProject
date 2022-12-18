@@ -1,5 +1,6 @@
 CC=clang
-CFLAGS=-Wall -Werror -std=c99 -fPIC -DPIC -Og -g -DDEBUG
+CFLAGS=-Wall -Werror -pthread -std=c99 -fPIC -DPIC -Og -g -DDEBUG
+LDFLAGS=-lpthread
 SRC=src
 
 all: malloc.so
@@ -8,7 +9,7 @@ all: malloc.so
 	$(CC) $(CFLAGS) -c $< -o $@
 
 malloc.so: msafe-eprintf.o mm-midend.o mm-backend.o mm-midend-aux.o mm-frontend.o mm-frontend-aux.o
-	$(LD) -shared -o malloc.so mm-frontend.o mm-midend.o mm-midend-aux.o mm-backend.o msafe-eprintf.o mm-frontend-aux.o
+	$(LD) $(LDFLAGS) -shared -o malloc.so mm-frontend.o mm-midend.o mm-midend-aux.o mm-backend.o msafe-eprintf.o mm-frontend-aux.o
 
 clean:
 	rm -f *.o *.so
