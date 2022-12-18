@@ -3,6 +3,7 @@
     "mm-frontend-aux.h": "c",
     "mm-frontend.h": "c",
     "*.tcc": "c",
-    "mm-midend-aux.h": "c"
+    "mm-midend-aux.h": "c",
+    "pthread.h": "c"
   }
 }

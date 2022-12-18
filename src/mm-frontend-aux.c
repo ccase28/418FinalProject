@@ -33,6 +33,17 @@ inline struct superblock_descriptor *get_next_sb(size_class_header *h,
   return &h->sb_start[sb->sb_next_index];
 }
 
+bool _mmf_cas64(uint64_t *dest, uint64_t swapval, uint64_t cmpval) {
+  __asm__(
+    "movb %rdx, %rax\n\t"
+    "xor %rcx, %rcx\n\t"
+    "lock cmpxchg %rsi, (%rdi)\n\t"
+    "mov $1, %rax\n\t"  // return 1
+    "cmovnz %rcx, %rax\n\t" // 0 if compare fails
+    "ret\n\t"
+  );
+}
+
 bool _mmf_cas8(uint8_t *dest, uint8_t swapval, uint8_t cmpval) {
   __asm__(
     "movb %dl, %al\n\t"
@@ -156,7 +167,7 @@ pid_t _mmf_thread_init_metadata(void) {
     uint16_t size_limit = _mmf_small_size_classes[i];
     header->sb_start = desc;
     header->active_sb_count = 0;
-    header->sb_active = UINT8_MAX; // technically unnecessary
+    header->sb_active = UINT8_MAX;
     header->sb_inactive_head = 0;
     for (uint8_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
       header->sb_inactive_list[j] = j + 1;
