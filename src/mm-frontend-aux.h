@@ -16,6 +16,8 @@ get_next_sb(size_class_header *h, struct superblock_descriptor *sb);
 
 bool _mmf_cas64(uint64_t *dest, uint64_t swapval, uint64_t cmpval) __attribute ((naked));
 
+bool _mmf_cas16(uint16_t *dest, uint16_t swapval, uint16_t cmpval) __attribute__ ((naked));
+
 bool _mmf_cas8(uint8_t *dest, uint8_t swapval, uint8_t cmpval) __attribute__ ((naked));
 
 size_t round_request_size(size_t reqsize);

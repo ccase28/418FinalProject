@@ -5,8 +5,9 @@
 #include "mm-frontend-aux.h"
 
 extern size_t bigcount;
+extern size_t bigcount_free;
 /* up to 2 pages is "small" */
-static const int _mmf_small_size_classes[] = {
+static const uint16_t _mmf_small_size_classes[] = {
   16, 32, 48, 64, 72, 128, 256, 512,
   1024, 2048, 4096, 8192
 };
@@ -41,6 +42,17 @@ bool _mmf_cas64(uint64_t *dest, uint64_t swapval, uint64_t cmpval) {
     "lock cmpxchg %rsi, (%rdi)\n\t"
     "mov $1, %rax\n\t"  // return 1
     "cmovnz %rcx, %rax\n\t" // 0 if compare fails
+    "ret\n\t"
+  );
+}
+
+bool _mmf_cas16(uint16_t *dest, uint16_t swapval, uint16_t cmpval) {
+  __asm__(
+    "movw %dx, %ax\n\t"
+    "xor %ecx, %ecx\n\t"
+    "lock cmpxchg %si, (%rdi)\n\t"
+    "mov $1, %eax\n\t"  // return 1
+    "cmovnz %ecx, %eax\n\t" // 0 if compare fails
     "ret\n\t"
   );
 }
@@ -132,12 +144,6 @@ pid_t _mmf_hash_tid(pid_t sys_tid) {
  * false otherwise
 */
 pid_t _mmf_thread_init_metadata(void) {
-
-  // pid_t sys_tid = syscall(__NR_gettid);
-  // pid_t internal_tid = _mmf_hash_tid(sys_tid);
-  // if (internal_tid < 0) {
-  //   return -1; // init failure
-  // }
 
   size_t metadata_chunk_size = round_up(
     sizeof(struct thread_metadata_region), _MM_PAGESIZE);
@@ -261,6 +267,7 @@ bool augment_size_class(size_class_header *header) {
     io_msafe_eprintf(
       "Error requesting %lu bytes from midend.\n",
       request_bytes);
+    io_msafe_eprintf("16 alloc: %lu. 16 free: %lu.\n", bigcount, bigcount_free);
     exit(1);
   }
   // io_msafe_eprintf_dbg(
