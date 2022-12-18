@@ -13,7 +13,7 @@ size_t bigcount = 0;
 extern __thread struct thread_metadata_region * _thread_metadata;
 
 static void *malloc_active(size_class_header *header) {
-  uint8_t curr_available, curr_index = header->sb_active;
+  uint16_t curr_available, curr_index = header->sb_active;
   struct superblock_descriptor *active = get_active_sb(header);
 
   typedef uint8_t search_obj_t[header->size_class];

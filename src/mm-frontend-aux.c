@@ -17,7 +17,7 @@ __thread struct thread_metadata_region * _thread_metadata = NULL;
 
 /* Get a pointer to the size class' active superblock. */
 inline struct superblock_descriptor *get_active_sb(size_class_header *h) {
-  uint8_t idx = h->sb_active;
+  uint16_t idx = h->sb_active;
   if (idx > _MMF_MAX_SB_PER_CLASS) { // no active block yet
     return NULL;
   }
@@ -168,9 +168,9 @@ pid_t _mmf_thread_init_metadata(void) {
     uint16_t size_limit = _mmf_small_size_classes[i];
     header->sb_start = desc;
     header->active_sb_count = 0;
-    header->sb_active = UINT8_MAX;
+    header->sb_active = UINT16_MAX;
     header->sb_inactive_head = 0;
-    for (uint8_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
+    for (uint16_t j = 0; j < _MMF_MAX_SB_PER_CLASS; j++) {
       header->sb_inactive_list[j] = j + 1;
       header->sb_start[j].size_class = size_limit;
     }
@@ -184,7 +184,7 @@ pid_t _mmf_thread_init_metadata(void) {
 void add_new_superblock(size_class_header *header, void *pages,
                         size_t obj_count, size_t request_pages) {
   struct superblock_descriptor *sb;
-  uint8_t sb_reclaim_index;
+  uint16_t sb_reclaim_index;
 
   io_msafe_assert(obj_count <= _MMF_OBJECTS_PER_SB);
   /* Find a new superblock to use. */

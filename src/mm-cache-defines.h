@@ -2,7 +2,7 @@
 #define _MM_CACHE_DEFNS_H
 
 #define _MMF_OBJECTS_PER_SB (255) /* strictly less than UINT8_MAX */
-#define _MMF_MAX_SB_PER_CLASS (32) /* strictly less than UINT8_MAX */
+#define _MMF_MAX_SB_PER_CLASS (255) /* strictly less than UINT8_MAX */
 #define _MMF_NUM_SIZE_CLASSES (12) /* strictly less than UINT8_MAX */
 #define _MMF_SMALL_THRESHOLD (8192) /* multiple of _MM_PAGESIZE */
 
@@ -20,11 +20,11 @@ struct superblock_descriptor {
   void      *payload;
   struct {  /* 64 bits for atomic compare-and-swap */
   uint16_t  size_class;     /* Size of blocks the superblock contains */
-  uint8_t   num_available;  /* Number of free objects in superblock */
   uint16_t   sb_prev_index;  /* Index of previous active superblock */
   uint16_t   sb_next_index;  /* Index of next active superblock */
+  uint8_t   num_available;  /* Number of free objects in superblock */
   uint8_t   freelist_head;  /* Head index of inner free list */
-  uint8_t   unused[2];      /* Padding; could be used later */
+  // uint8_t   unused[2];      /* Padding; could be used later */
   };
   uint8_t   obj_list[_MMF_OBJECTS_PER_SB];  /* Free list */
 }; // 144 bytes
