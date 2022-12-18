@@ -5,7 +5,7 @@
 #include "mm-cache-defines.h"
 #include "mm-frontend-aux.h"
 
-#define PM_LEVELS (3)
+#define PM_LEVELS (4)
 #define PM_INDEX_WIDTH (12)
 #define PM_BLOCK_INDICES (1UL << PM_INDEX_WIDTH)
 #define PM_NOEXIST (NULL)

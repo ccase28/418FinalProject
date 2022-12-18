@@ -2,7 +2,7 @@
 #define _MM_CACHE_DEFNS_H
 
 #define _MMF_OBJECTS_PER_SB (255) /* strictly less than UINT8_MAX */
-#define _MMF_MAX_SB_PER_CLASS (255) /* strictly less than UINT8_MAX */
+#define _MMF_MAX_SB_PER_CLASS (512) /* strictly less than UINT8_MAX */
 #define _MMF_NUM_SIZE_CLASSES (12) /* strictly less than UINT8_MAX */
 #define _MMF_SMALL_THRESHOLD (8192) /* multiple of _MM_PAGESIZE */
 

@@ -92,32 +92,31 @@ void *malloc(size_t size) {
 }
 
 void free(void *ptr) {
-  return;
-  // if (ptr == NULL) return; // C standard
-  // struct superblock_descriptor *desc = pagemap_lookup(ptr);
-  // if (NULL == desc) { /* too large for cache */
-  //   io_msafe_eprintf(
-  //     "Size class not found for pointer %p.\n", ptr); 
-  //   return;
-  // }
-  // /* make sure pointer within bounds */
-  // size_t payload_idx = ((uintptr_t)ptr - (uintptr_t)desc->payload) / desc->size_class;
-  // io_msafe_assert(payload_idx <= _MMF_OBJECTS_PER_SB);
+  if (ptr == NULL) return; // C standard
+  struct superblock_descriptor *desc = pagemap_lookup(ptr);
+  if (NULL == desc) { /* too large for cache */
+    // io_msafe_eprintf(
+    //   "Size class not found for pointer %p.\n", ptr); 
+    return;
+  }
+  /* make sure pointer within bounds */
+  size_t payload_idx = ((uintptr_t)ptr - (uintptr_t)desc->payload) / desc->size_class;
+  io_msafe_assert(payload_idx <= _MMF_OBJECTS_PER_SB);
 
-  // /* push free block onto stack */
-  // uint8_t *block_list = desc->obj_list;
-  // uint8_t cur_head_idx, new_head_idx = (uint8_t)payload_idx;
-  // do {
-  //   cur_head_idx = desc->freelist_head;
-  //   block_list[new_head_idx] = cur_head_idx; // new->next = cur_head
-  //   /* if payload head is still cur_head_idx, swap it with new object */
-  // } while (!_mmf_cas8(&desc->freelist_head, new_head_idx, cur_head_idx));
+  /* push free block onto stack */
+  uint8_t *block_list = desc->obj_list;
+  uint8_t cur_head_idx, new_head_idx = (uint8_t)payload_idx;
+  do {
+    cur_head_idx = desc->freelist_head;
+    block_list[new_head_idx] = cur_head_idx; // new->next = cur_head
+    /* if payload head is still cur_head_idx, swap it with new object */
+  } while (!_mmf_cas8(&desc->freelist_head, new_head_idx, cur_head_idx));
 
-  // /* broadcast new availability */
-  // uint8_t avail_now;
-  // do {
-  //   avail_now = desc->num_available;
-  // } while (!_mmf_cas8(&desc->num_available, avail_now + 1, avail_now));
+  /* broadcast new availability */
+  uint8_t avail_now;
+  do {
+    avail_now = desc->num_available;
+  } while (!_mmf_cas8(&desc->num_available, avail_now + 1, avail_now));
 }
 
 /**

@@ -230,10 +230,10 @@ void add_new_superblock(size_class_header *header, void *pages,
 
   /* Mark owner of new pages. */
   (void)request_pages;
-  // for (int i = 0; i < request_pages; i++) {
-  //   uint8_t *mark_ptr = (uint8_t *)pages + (i * _MM_PAGESIZE);
-  //   pagemap_reallocate(mark_ptr, sb);
-  // }
+  for (int i = 0; i < request_pages; i++) {
+    uint8_t *mark_ptr = (uint8_t *)pages + (i * _MM_PAGESIZE);
+    pagemap_reallocate(mark_ptr, sb);
+  }
 }
 
 /**
