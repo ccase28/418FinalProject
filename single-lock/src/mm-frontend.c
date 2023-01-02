@@ -1,65 +1,98 @@
+/**
+ * @file mm-frontend.c
+ * @author Makoto Tomokiyo <mtomokiy@andrew.cmu.edu>
+ * @brief An interface to the custom malloc suite.
+ * WARNING: Do not call malloc-dependent library functions (such as printf)
+ *          from within any functions in this file. This will deadlock.
+*/
 
+#include "mm-backend.h"
 #include "mm-frontend.h"
 #include "mm-frontend-aux.h"
 
+extern block_t *heap_start;
+extern miniblock_t *miniblock_pointer;
+extern block_t *seglists[];
+extern size_t chunksize;
+
+pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * @brief Initialize the heap.
  * @return true if initialization was successful
  */
-static bool init_heap(void) {
-    // Create the initial empty heap
-    word_t *start = (word_t *)(extend_bmp(2 * wsize));
+static bool _mmf_init_heap(void) {
+    int trylock_return;
+    uint64_t *start;
 
-    if (start == (void *)-1) return false;
+    trylock_return = pthread_mutex_trylock(&global_lock);
+    switch (trylock_return) {
+        case 0:
+        case EBUSY: // either thread gets it, or another is using
+            break;
+        case EINVAL:
+            io_msafe_eprintf("Fatal: Uninitialized mutex.\n");
+            exit(1);
+        default:
+            return false;
+    }
+    /* Lock acquired */
+
+    // Create the initial empty heap
+    if ((start = (uint64_t *)(extend_bmp(2 * wsize))) == _MM_EXTEND_BMP_FAIL)
+        goto _mmf_init_heap_failure;
 
     start[0] = pack(0, true, true, false); // Heap prologue (block footer)
     start[1] = pack(0, true, true, false); // Heap epilogue (block header)
 
     /* Reset global variables */
 
-    // Heap starts with first "block header", currently the epilogue
     heap_start = (block_t *)&(start[1]);
 
     chunksize = CHUNK_SIZE;
 
-    // Initialize all size class pointers
-    for (int i = 0; i < NUM_CLASSES; i++) {
-        seglists[i] = NULL;
-    }
+    // Reset all size class pointers
+    memset(seglists, 0, NUM_CLASSES * sizeof(void *));
 
     // Extend the empty heap with a free block of chunksize bytes
     if (extend_heap(chunksize) == NULL) {
-        return false;
+        goto _mmf_init_heap_failure;
     }
 
-    insert_free_block(heap_start);
+    // NOTE: 
+    insert_free_block((block_t *)heap_start);
 
+    pthread_mutex_unlock(&global_lock);
     return true;
+
+_mmf_init_heap_failure:
+    pthread_mutex_unlock(&global_lock);
+    return false;
 }
 
 /**
  * @brief Extend the heap in response to allocation request.
- *
  * @param[in] size Amount of space requested by client
  * @return pointer to allocated payload, NULL if error occurred.
  */
 void *malloc(size_t size) {
-
     size_t asize;      // Adjusted block size
     size_t extendsize; // Amount to extend heap if no fit is found
     block_t *block;
     void *bp = NULL;
 
     // Initialize heap if it isn't initialized
+    // Mutex is acquired within this function
     if (heap_start == NULL) {
-        init_heap();
+        _mmf_init_heap();
     }
 
     // Ignore spurious request
     if (size == 0) {
-        return bp;
+        return bp; // NULL
     }
+
+    pthread_mutex_lock(&global_lock);
 
     // Adjust block size to include overhead and to meet alignment
     // requirements
@@ -76,7 +109,7 @@ void *malloc(size_t size) {
         block = extend_heap(extendsize);
         // extend_heap returns an error
         if (block == NULL) {
-            return bp;
+            goto _malloc_finish;
         }
     }
 
@@ -95,6 +128,9 @@ void *malloc(size_t size) {
     split_block(block, asize);
 
     bp = header_to_payload(block);
+
+_malloc_finish:
+    pthread_mutex_unlock(&global_lock);
     return bp;
 }
 
@@ -107,8 +143,22 @@ void free(void *ptr) {
 
     if (ptr == NULL) return;
 
+    // cannot free if heap is uninit
+    if (!heap_start) {
+        io_msafe_eprintf("Fatal: cannot free on uninit heap.\n");
+    }
+
+    pthread_mutex_lock(&global_lock);
+
+    // Should we make provisions for multiple threads freeing?
+    
     block_t *block = payload_to_header(ptr);
     size_t size = get_size(block);
+
+    if (!get_alloc(block))  {
+        io_msafe_eprintf("Fatal: cannot free freed block.\n");
+        exit(1);
+    }
 
     // Mark the block as free
     bool prev_alloc = get_prev_alloc(block);
@@ -119,6 +169,8 @@ void free(void *ptr) {
 
     // Try to coalesce the block with its neighbors
     coalesce_block(block);
+
+    pthread_mutex_unlock(&global_lock);
 }
 
 /**

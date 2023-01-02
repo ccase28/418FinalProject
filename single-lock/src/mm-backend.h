@@ -3,6 +3,8 @@
 
 #include "mm-comm.h"
 
+#define _MM_EXTEND_BMP_FAIL ((void *)-1L)
+
 /**
  * @brief
  */

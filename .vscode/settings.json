@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "mm-frontend-aux.h": "c",
+    "mm-frontend.h": "c",
+    "*.tcc": "c"
+  }
+}
