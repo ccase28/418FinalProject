@@ -8,6 +8,20 @@
 #include "mm-backend.h"
 
 /**
+ * Global variables 
+ */
+
+/** @brief Pointer to the start of the miniblock list */
+// static __thread miniblock_t *miniblock_pointer = NULL;
+
+/** @brief Array of explicit lists segregated by size class */
+// extern __thread block_t *seglists[];
+
+/** @brief thread ID of the calling thread */
+extern __thread struct thread_heap_info * thread_arena_context;
+// extern __thread pid_t _mm_caller_tid_internal;
+
+/**
  * @brief Returns the maximum of two integers.
  * @param[in] x
  * @param[in] y
@@ -28,13 +42,11 @@ size_t round_up(size_t size, size_t n) {
 }
 
 static block_t *find_prev_free(block_t *block) {
-
     block_t *prev = (block->ptrs).prev;
     return prev;
 }
 
 static block_t *find_next_free(block_t *block) {
-
     block_t *nxt = (block->ptrs).next;
     return nxt;
 }
@@ -105,7 +117,7 @@ static bool extract_alloc(word_t word) {
     return (bool)(word & alloc_mask);
 }
 
-static bool get_alloc(block_t *block) {
+bool get_alloc(block_t *block) {
     return extract_alloc(block->header);
 }
 
@@ -192,20 +204,20 @@ short find_size_class(size_t size) {
 }
 
 block_t *find_epilogue() {
-    return (block_t *)((char *)mem_heap_hi() - 7);
+    return (block_t *)((char *)thread_mem_heap_hi() - 7);
 }
 
 void insert_free_block(block_t *block) {
 
     if (is_miniblock(block)) {
         miniblock_t *mb = (miniblock_t *)block;
-        mb->next = miniblock_pointer;
-        miniblock_pointer = mb;
+        mb->next = thread_arena_context->miniblock_pointer;
+        thread_arena_context->miniblock_pointer = mb;
         return;
     }
 
     short sc = find_size_class(get_size(block));
-    block_t *sc_pointer = seglists[sc];
+    block_t *sc_pointer = (thread_arena_context->seglists)[sc];
 
     if (sc_pointer == NULL) {
         sc_pointer = block;
@@ -213,7 +225,7 @@ void insert_free_block(block_t *block) {
         set_next_free(sc_pointer, sc_pointer);
 
         // Update root pointer in size class array
-        seglists[sc] = sc_pointer;
+        (thread_arena_context->seglists)[sc] = sc_pointer;
     } else {
         block_t *next = find_next_free(sc_pointer);
 
@@ -227,10 +239,10 @@ void insert_free_block(block_t *block) {
 void remove_free_block(block_t *block) {
 
     if (is_miniblock(block)) {
-        if (block == (block_t *)miniblock_pointer) {
-            miniblock_pointer = (miniblock_pointer->next);
+        if (block == (block_t *)thread_arena_context->miniblock_pointer) {
+            thread_arena_context->miniblock_pointer = (((miniblock_t *)block)->next);
         } else {
-            miniblock_t *mb = miniblock_pointer;
+            miniblock_t *mb = thread_arena_context->miniblock_pointer;
             while (mb != NULL && mb->next != NULL) {
                 if (mb->next == (miniblock_t *)block) {
                     mb->next = mb->next->next;
@@ -244,7 +256,7 @@ void remove_free_block(block_t *block) {
 
     // Get parent free list
     short sc = find_size_class(get_size(block));
-    block_t *sc_pointer = seglists[sc];
+    block_t *sc_pointer = (thread_arena_context->seglists)[sc];
 
     block_t *prev = find_prev_free(block);
     block_t *next = find_next_free(block);
@@ -252,11 +264,11 @@ void remove_free_block(block_t *block) {
     if (prev == block) {
 
         // If block is the only block in list, remove it
-        seglists[sc] = NULL;
+        (thread_arena_context->seglists)[sc] = NULL;
     } else {
         if (block == sc_pointer) {
             // if root is removed, move pointer backward in list
-            seglists[sc] = prev;
+            (thread_arena_context->seglists)[sc] = prev;
         }
         set_prev_free(next, prev);
         set_next_free(prev, next);
@@ -328,7 +340,7 @@ block_t *coalesce_block(block_t *block) {
     return NULL;
 }
 
-block_t *extend_heap(size_t size) {
+block_t *extend_heap(size_t size) { // context-sensitive
     void *bp;
 
     bool prev_block_alloc = get_prev_alloc(find_epilogue());
@@ -336,7 +348,7 @@ block_t *extend_heap(size_t size) {
 
     // Allocate an even number of words to maintain alignment
     size = round_up(size, dsize);
-    if ((bp = extend_bmp((intptr_t)size)) == (void *)-1) {
+    if ((bp = thread_extend_bmp((intptr_t)size)) == (void *)-1) {
         return NULL;
     }
 
@@ -379,15 +391,15 @@ block_t *find_fit(size_t asize) {
 
     // Find fit for miniblocks (first fit)
     if (asize <= min_block_size) {
-        if (miniblock_pointer != NULL) {
-            return (block_t *)miniblock_pointer;
+        if (thread_arena_context->miniblock_pointer != NULL) {
+            return (block_t *)thread_arena_context->miniblock_pointer;
         }
     }
 
     // Find size class
     short i = find_size_class(asize);
     while (i < NUM_CLASSES) {
-        block_t *start = seglists[i];
+        block_t *start = (thread_arena_context->seglists)[i];
         block_t *block = start;
 
         // BEST (BETTER) FIT

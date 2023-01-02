@@ -2,4 +2,6 @@
 *.o *.ll *.so
 
 # malloc test
-malloc-test.c
+malloc-test* driver*
+
+.vscode

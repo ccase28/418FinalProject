@@ -14,11 +14,13 @@
 #include <sys/mman.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <emmintrin.h>
+#include "msafe-eprintf.h"
 
 /* Option to expand heap size */
 #ifndef TOTAL_ALLOC_SPACE
 #define TOTAL_ALLOC_SPACE (1UL << 30) /* 1 GiB */
 #endif
-#define TRY_ALLOC_START (void *)0x8000000
+#define TRY_ALLOC_START (void *)0x800000000000
 
 #endif // _COMMON_H

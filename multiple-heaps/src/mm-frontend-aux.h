@@ -2,20 +2,31 @@
 #define _MM_FRONTEND_AUX_H
 
 #include "mm-comm.h"
+#include "mm-backend.h"
 
-/** @brief Number of size classes in segregated list */
-#define NUM_CLASSES 9
+/**
+ * Context-sensitive functions:
+ * find_fit
+ * extend_heap
+ * remove_free_block
+ * insert_free_block
+ * anything that calls any of these
+*/
 
 /** @brief Number of samples in average block size estimation */
 #define NUM_ITERS 100
 
-/** @brief Minimum size by which the heap extends*/
-#define CHUNK_SIZE 1 << 12
+/** @brief Minimum size by which the heap extends (1 page min.) */
+#define CHUNK_SIZE (1 << 12)
+
+#define PK_INUSE true
+#define PK_INUSE_P true
+#define PK_ISSMALL_P true
 
 typedef uint64_t word_t;
 
 /** @brief Represents the header and payload of one block in the heap */
-typedef struct block {
+struct block {
     /**
      * @brief Header contains size + allocation flag
      */
@@ -27,16 +38,16 @@ typedef struct block {
         } ptrs;
         char payload[0];
     };
-} block_t;
+};
 
 /** @brief Represents a fixed-size miniblock in the heap */
-typedef struct miniblock {
+struct miniblock {
     word_t header;
     union {
         struct miniblock *next;
         char payload[0];
     };
-} miniblock_t;
+};
 
 /* Basic constants */
 
@@ -65,24 +76,8 @@ static const word_t prev_mini_mask = 0x4;
 /** @brief How far to search seglists for desired block for best fit policy */
 static const size_t search_depth = 18;
 
-/**
- * Global variables 
- */
-
-/** @brief Pointer to first block in the heap */
-static block_t *heap_start = NULL;
-
-/** @brief Pointer to the start of the miniblock list */
-static miniblock_t *miniblock_pointer = NULL;
-
 /** @brief Set of size classes for segregated list */
-static size_t size_classes[] = {16, 48, 64, 80, 96, 128, 256, 1024, 4096, 8192};
-
-/** @brief Array of explicit lists segregated by size class */
-static block_t *seglists[NUM_CLASSES];
-
-/** @brief Minimum extend size of heap */
-static size_t chunksize = CHUNK_SIZE;
+static const size_t size_classes[] = {16, 48, 64, 80, 96, 128, 256, 1024, 4096, 8192};
 
 /**
  * @brief Returns the maximum of two integers.
@@ -131,6 +126,13 @@ size_t extract_size(word_t word);
  * @return The size of the block
  */
 size_t get_size(block_t *block);
+
+/**
+ * @brief Extracts the alloc of a block from its header.
+ * @param[in] block
+ * @return The alloc of the block
+ */
+bool get_alloc(block_t *block);
 
 /**
  * @brief Return whether the previous block is a miniblock.
@@ -214,7 +216,7 @@ short find_size_class(size_t size);
  * @brief Find the epilogue of the current heap.
  * @return a pointer to the epilogue.
 */
-block_t *find_epilogue(void);
+block_t *find_epilogue();
 
 /**
  * @brief Insert a free block into the free list.
